@@ -230,7 +230,7 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(schedule.status_code, 201)
         self.assertEqual(len(self.client.get(f"/api/servers/{server_id}/schedules").get_json()), 1)
 
-        with patch.object(panel, "run_firewall_rule") as firewall:
+        with patch.object(panel, "IS_WINDOWS", True), patch.object(panel, "run_firewall_rule") as firewall:
             port = self.post(
                 f"/api/servers/{server_id}/network",
                 {"port": 25575, "protocol": "TCP", "description": "RCON"},
@@ -272,6 +272,52 @@ class PanelTests(unittest.TestCase):
         self.csrf = login_user.get_json()["csrfToken"]
         self.assertEqual(self.client.get("/api/servers").get_json()[0]["id"], server_id)
         self.assertEqual(self.client.get(f"/api/servers/{server_id}/settings").status_code, 200)
+
+    def test_non_windows_ports_are_recorded_without_firewall_changes(self):
+        created = self.post(
+            "/api/register", {"username": "root_user", "password": "secure-password-1"}
+        )
+        self.csrf = created.get_json()["csrfToken"]
+        server = self.post(
+            "/api/servers",
+            {"name": "Cross-platform server", "ownerId": created.get_json()["user"]["id"],
+             "software": "paper", "version": "1.21.8", "build": "123",
+             "ramMb": 2048, "diskMb": 10240, "port": 25565},
+        ).get_json()
+
+        with patch.object(panel, "IS_WINDOWS", False), patch.object(panel, "run_firewall_rule") as firewall:
+            network = self.client.get(f"/api/servers/{server['id']}/network").get_json()
+            self.assertFalse(network["firewallManaged"])
+            port = self.post(
+                f"/api/servers/{server['id']}/network",
+                {"port": 25575, "protocol": "TCP", "description": "RCON"},
+            )
+            self.assertEqual(port.status_code, 201)
+            self.assertEqual(port.get_json()["firewallProfile"], "Manual")
+            removed = self.client.delete(
+                f"/api/servers/{server['id']}/network/{port.get_json()['id']}",
+                headers={"X-CSRF-Token": self.csrf},
+            )
+            self.assertEqual(removed.status_code, 200)
+            firewall.assert_not_called()
+
+            status = self.client.get("/api/admin/database/status").get_json()
+            self.assertFalse(status["installSupported"])
+            install = self.post("/api/admin/database/install", {})
+            self.assertEqual(install.status_code, 501)
+
+    def test_frozen_data_directory_uses_native_user_location(self):
+        home = panel.Path.home() / "nexory-home"
+        with patch.object(panel.sys, "frozen", True, create=True), patch.object(panel.sys, "platform", "darwin"), patch.object(panel.Path, "home", return_value=home):
+            self.assertEqual(
+                panel.default_data_directory(),
+                home / "Library" / "Application Support" / "NexoryPanel",
+            )
+        with patch.object(panel.sys, "frozen", True, create=True), patch.object(panel.sys, "platform", "linux"), patch.object(panel.Path, "home", return_value=home), patch.dict(panel.os.environ, {"XDG_DATA_HOME": str(home / ".local" / "share")}):
+            self.assertEqual(
+                panel.default_data_directory(),
+                home / ".local" / "share" / "nexorypanel",
+            )
 
     def test_custom_admin_branding_and_background_settings(self):
         registered = self.post(

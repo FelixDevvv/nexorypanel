@@ -29,8 +29,24 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 APP_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-DATA_DEFAULT = Path(sys.executable).resolve().parent / "data" if getattr(sys, "frozen", False) else APP_ROOT / "data"
-DATA_DIR = Path(os.environ.get("NEXORY_DATA_DIR", DATA_DEFAULT)).resolve()
+IS_WINDOWS = os.name == "nt"
+PLATFORM_LABEL = {"darwin": "macOS", "win32": "Windows"}.get(sys.platform, "Linux")
+DEFAULT_NODE_NAME = f"Nexory {PLATFORM_LABEL} Node"
+
+
+def default_data_directory() -> Path:
+    if not getattr(sys, "frozen", False):
+        return APP_ROOT / "data"
+    if sys.platform == "win32":
+        return Path(sys.executable).resolve().parent / "data"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "NexoryPanel"
+    data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return data_home / "nexorypanel"
+
+
+DATA_DEFAULT = default_data_directory()
+DATA_DIR = Path(os.environ.get("NEXORY_DATA_DIR", DATA_DEFAULT)).expanduser().resolve()
 SERVER_DIR = DATA_DIR / "servers"
 DB_PATH = DATA_DIR / "nexory.sqlite3"
 CONFIG_PATH = DATA_DIR / "secret.key"
@@ -176,7 +192,7 @@ def init_db() -> None:
         "button_style": "Gradient",
         "max_ram_mb": "8192",
         "max_disk_mb": "51200",
-        "node_name": "Nexory Windows Node",
+        "node_name": DEFAULT_NODE_NAME,
         "api_key_enabled": "false",
         "background_style": "Gradient",
         "announcement": "",
@@ -452,7 +468,9 @@ def bootstrap():
             "discordUrl": setting("discord_url", ""),
             "customLinks": custom_links,
             "hasCustomIcon": (DATA_DIR / "custom_icon.png").is_file(),
-            "nodeName": setting("node_name", "Nexory Windows Node"),
+            "nodeName": setting("node_name", DEFAULT_NODE_NAME),
+            "platformLabel": PLATFORM_LABEL,
+            "firewallManaged": IS_WINDOWS,
             "user": (
                 dict(db().execute(
                     "SELECT id, username, role FROM users WHERE id = ?", (session.get("user_id"),)
@@ -1068,7 +1086,7 @@ def delete_server_backup(server_id: str, backup_id: str):
 
 
 def run_firewall_rule(rule_name: str, port: int, protocol: str, profile: str, remove: bool = False) -> None:
-    if os.name != "nt":
+    if not IS_WINDOWS:
         raise RuntimeError("La administración del Firewall solo está disponible en Windows.")
     verb = "delete" if remove else "add"
     arguments = ["netsh", "advfirewall", "firewall", verb, "rule", f"name={rule_name}"]
@@ -1100,7 +1118,11 @@ def list_server_ports(server_id: str):
         "id": "primary", "port": server["port"], "protocol": "TCP",
         "description": "Puerto principal de Minecraft", "primary": True,
     }
-    return jsonify({"ports": [primary, *[dict(row) for row in rows]], "firewallProfile": setting("firewall_profile", "Any")})
+    return jsonify({
+        "ports": [primary, *[dict(row) for row in rows]],
+        "firewallProfile": setting("firewall_profile", "Any"),
+        "firewallManaged": IS_WINDOWS,
+    })
 
 
 @app.post("/api/servers/<server_id>/network")
@@ -1124,14 +1146,15 @@ def add_server_port(server_id: str):
     ).fetchone()
     if collision:
         return response_error("Ese puerto ya está asignado.", 409)
-    profile = setting("firewall_profile", "Any")
+    profile = setting("firewall_profile", "Any") if IS_WINDOWS else "Manual"
     port_id = uuid.uuid4().hex[:12]
     firewall_name = f"NexoryPanel-{server_id}-{port_id}"
-    try:
-        run_firewall_rule(firewall_name, port, protocol, profile)
-    except RuntimeError as error:
-        logging.warning("No se pudo abrir %s/%s en el Firewall: %s", port, protocol, error)
-        return response_error(str(error), 503)
+    if IS_WINDOWS:
+        try:
+            run_firewall_rule(firewall_name, port, protocol, profile)
+        except RuntimeError as error:
+            logging.warning("No se pudo abrir %s/%s en el Firewall: %s", port, protocol, error)
+            return response_error(str(error), 503)
     try:
         db().execute(
             """INSERT INTO server_ports(id, server_id, port, protocol, description, firewall_name, firewall_profile, created_at)
@@ -1141,10 +1164,11 @@ def add_server_port(server_id: str):
         db().commit()
     except sqlite3.IntegrityError:
         db().rollback()
-        try:
-            run_firewall_rule(firewall_name, port, protocol, profile, remove=True)
-        except RuntimeError:
-            logging.exception("No se pudo revertir una regla de Firewall huérfana %s", firewall_name)
+        if IS_WINDOWS:
+            try:
+                run_firewall_rule(firewall_name, port, protocol, profile, remove=True)
+            except RuntimeError:
+                logging.exception("No se pudo revertir una regla de Firewall huérfana %s", firewall_name)
         return response_error("Ese puerto ya está asignado.", 409)
     log_activity(server_id, "server.network.add", f"{port}/{protocol} ({profile})")
     return jsonify({"ok": True, "id": port_id, "firewallProfile": profile}), 201
@@ -1161,11 +1185,12 @@ def delete_server_port(server_id: str, port_id: str):
     ).fetchone()
     if not row:
         return response_error("Asignación no encontrada.", 404)
-    try:
-        run_firewall_rule(row["firewall_name"], row["port"], row["protocol"], row["firewall_profile"], remove=True)
-    except RuntimeError as error:
-        logging.warning("No se pudo cerrar %s/%s en el Firewall: %s", row["port"], row["protocol"], error)
-        return response_error(str(error), 503)
+    if IS_WINDOWS and row["firewall_profile"] != "Manual":
+        try:
+            run_firewall_rule(row["firewall_name"], row["port"], row["protocol"], row["firewall_profile"], remove=True)
+        except RuntimeError as error:
+            logging.warning("No se pudo cerrar %s/%s en el Firewall: %s", row["port"], row["protocol"], error)
+            return response_error(str(error), 503)
     db().execute("DELETE FROM server_ports WHERE id = ?", (port_id,))
     db().commit()
     log_activity(server_id, "server.network.remove", f"{row['port']}/{row['protocol']}")
@@ -1175,8 +1200,9 @@ def delete_server_port(server_id: str, port_id: str):
 def mysql_binary() -> Path | None:
     found = shutil.which("mysql")
     candidates = [Path(found)] if found else []
-    for root in (Path(os.environ.get("ProgramFiles", r"C:\Program Files")), Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))):
-        candidates.extend(root.glob("MySQL/MySQL Server */bin/mysql.exe"))
+    if IS_WINDOWS:
+        for root in (Path(os.environ.get("ProgramFiles", r"C:\Program Files")), Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))):
+            candidates.extend(root.glob("MySQL/MySQL Server */bin/mysql.exe"))
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
@@ -1291,6 +1317,7 @@ def mysql_install_status():
     return jsonify({
         "installed": binary is not None,
         "binary": str(binary) if binary else "",
+        "installSupported": IS_WINDOWS,
         "installRunning": bool(process and process.poll() is None),
         "installExitCode": process.returncode if process and process.poll() is not None else None,
     })
@@ -1300,6 +1327,12 @@ def mysql_install_status():
 @login_required(admin=True)
 def install_mysql_server():
     global MYSQL_INSTALL_PROCESS
+    if not IS_WINDOWS:
+        return response_error(
+            "La instalación automática de MySQL solo está disponible en Windows. "
+            "Instala MySQL Server y el cliente mysql desde el gestor de paquetes de tu sistema.",
+            501,
+        )
     if mysql_binary():
         return jsonify({"ok": True, "installed": True})
     if MYSQL_INSTALL_PROCESS and MYSQL_INSTALL_PROCESS.poll() is None:
@@ -1717,7 +1750,9 @@ def admin_overview():
             "backgroundEnd": setting("background_end", "#211644"),
             "maxRamMb": int(setting("max_ram_mb", "8192")),
             "maxDiskMb": int(setting("max_disk_mb", "51200")),
-            "nodeName": setting("node_name", "Nexory Windows Node"),
+            "nodeName": setting("node_name", DEFAULT_NODE_NAME),
+            "platformLabel": PLATFORM_LABEL,
+            "firewallManaged": IS_WINDOWS,
             "apiKeyEnabled": setting("api_key_enabled", "false") == "true",
             "announcement": setting("announcement", ""),
             "discordUrl": setting("discord_url", ""),
@@ -1785,7 +1820,7 @@ def update_settings():
             return response_error("La URL de Discord debe comenzar por https://.")
     enable_register = bool(body.get("enableRegister", True))
     api_enabled = bool(body.get("apiKeyEnabled", False))
-    node_name = str(body.get("nodeName", "Nexory Windows Node")).strip()[:60] or "Nexory Windows Node"
+    node_name = str(body.get("nodeName", DEFAULT_NODE_NAME)).strip()[:60] or DEFAULT_NODE_NAME
     values = {
         "max_ram_mb": str(max_ram), "max_disk_mb": str(max_disk), "theme": theme,
         "enable_register": str(enable_register).lower(), "api_key_enabled": str(api_enabled).lower(),

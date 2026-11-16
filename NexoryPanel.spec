@@ -1,7 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import sys
 
 root = Path(SPECPATH)
+icon = (
+    str(root / "static" / "icon.ico")
+    if sys.platform == "win32"
+    else str(root / "static" / "icon.icns")
+    if sys.platform == "darwin"
+    else None
+)
 
 a = Analysis(
     [str(root / "app.py")],
@@ -29,7 +37,16 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=sys.platform == "win32",
     console=True,
-    icon=str(root / "static" / "icon.ico"),
+    icon=icon,
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="NexoryPanel.app",
+        icon=icon,
+        bundle_identifier="com.felixdevvv.nexorypanel",
+        info_plist={"LSMinimumSystemVersion": "12.0"},
+    )

@@ -137,7 +137,7 @@ function authPage(setup = false, registrationEnabled = true) {
       state.user = result.user;
       state.csrf = result.csrfToken;
       state.page = 'servers';
-      state.settings = { theme: 'Purple', accentColor: '', buttonStyle: 'Gradient', backgroundStyle: 'Gradient', backgroundStart: '#151027', backgroundEnd: '#211644', announcement: '', discordUrl: '', customLinks: [], nodeName: 'Nexory Windows Node' };
+      state.settings = { theme: 'Purple', accentColor: '', buttonStyle: 'Gradient', backgroundStyle: 'Gradient', backgroundStart: '#151027', backgroundEnd: '#211644', announcement: '', discordUrl: '', customLinks: [], nodeName: 'Nexory Node', platformLabel: 'Windows' };
       setTheme('Purple');
       renderShell();
     } catch (error) {
@@ -199,7 +199,7 @@ function renderShell() {
       ${isAdmin ? navButton('admin', 'Administración', icon('admin')) : ''}
     </nav>
     <div class="nav-caption">NODO LOCAL</div>
-    <div class="notice" style="margin:5px 7px">◉ &nbsp;${esc(state.settings?.nodeName || 'Nexory Windows Node')}<br><span class="tiny muted">127.0.0.1 · Windows</span></div>`;
+    <div class="notice" style="margin:5px 7px">◉ &nbsp;${esc(state.settings?.nodeName || 'Nexory Node')}<br><span class="tiny muted">127.0.0.1 · ${esc(state.settings?.platformLabel || 'Windows')}</span></div>`;
   const serverSidebar = inServer ? `
     <div class="side-brand server-side-brand">
       <button class="server-brand-back" data-page="servers" title="Volver a servidores">${brandMark()}<span>NexoryPanel</span></button>
@@ -306,7 +306,7 @@ async function renderPage() {
         ${statCard('SERVIDORES', servers.length, `${online} en ejecución`, '▦')}
         ${statCard('RAM ASIGNADA', `${(ram / 1024).toFixed(1)} GiB`, 'Límites definidos por nodo', '▤')}
         ${statCard('DISCO ASIGNADO', `${(disk / 1024).toFixed(1)} GiB`, 'Cuota por servidor', '▱')}
-        ${statCard('ESTADO DEL NODO', 'Activo', 'Ejecución local en Windows', '◇')}
+        ${statCard('ESTADO DEL NODO', 'Activo', `Ejecución local en ${esc(state.settings?.platformLabel || 'Windows')}`, '◇')}
       </div>
       <div class="section-title"><div><h2>Instancias</h2><p>Servidores disponibles para tu cuenta</p></div><span class="badge">${servers.length} total</span></div>
       ${servers.length ? `<div class="grid server-grid">${servers.map(serverCard).join('')}</div>` : `<div class="card empty"><span class="empty-icon">⬡</span><strong>Aún no hay servidores</strong><span>${state.user.role === 'admin' ? 'Crea el primer servidor y elige su software, versión y recursos.' : 'Un administrador deberá asignarte un servidor.'}</span>${state.user.role === 'admin' ? '<button id="create-server-empty" class="btn btn-primary mt">Crear primer servidor</button>' : ''}</div>`}`;
@@ -428,11 +428,14 @@ async function renderNetwork() {
   const box = document.getElementById('server-tab-content');
   try {
     const data = await api(`/api/servers/${state.server.id}/network`);
-    box.innerHTML = `${serverModuleHeading('Network', 'Administra puertos adicionales y sus reglas de Windows Firewall.', 'network')}
-      <div class="notice">Las reglas entrantes usan el perfil <strong>${esc(data.firewallProfile)}</strong> configurado por el administrador. Windows puede requerir que ejecutes NexoryPanel como administrador. Abrir puertos puede exponer servicios a otros equipos de la red.</div>
+    const firewallNote = data.firewallManaged
+      ? `Las reglas entrantes usan el perfil <strong>${esc(data.firewallProfile)}</strong> configurado por el administrador. Windows puede requerir que ejecutes NexoryPanel como administrador. Abrir puertos puede exponer servicios a otros equipos de la red.`
+      : 'NexoryPanel registra los puertos, pero no cambia el firewall del sistema en macOS/Linux. Configura el acceso de red por separado antes de permitir conexiones externas.';
+    box.innerHTML = `${serverModuleHeading('Network', data.firewallManaged ? 'Administra puertos y reglas de Windows Firewall.' : 'Administra las asignaciones de puertos de tu servidor.', 'network')}
+      <div class="notice">${firewallNote}</div>
       <section class="card mt"><div class="section-title"><div><h2>Puertos asignados</h2><p>El puerto principal de Minecraft ya está reservado.</p></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Puerto</th><th>Protocolo</th><th>Descripción</th><th>Regla del Firewall</th><th></th></tr></thead><tbody>${data.ports.map(port => `<tr><td>${port.port}</td><td>${esc(port.protocol)}</td><td>${esc(port.description)}</td><td>${port.primary ? 'No gestionada' : esc(port.firewall_profile)}</td><td>${port.primary ? '<span class="badge">Principal</span>' : `<button class="btn btn-danger" data-remove-port="${esc(port.id)}">Cerrar puerto</button>`}</td></tr>`).join('')}</tbody></table></div></section>
-      <section class="card mt"><div class="section-title"><div><h2>Añadir puerto</h2><p>La regla se crea explícitamente al guardar.</p></div></div><form id="network-form" class="form-grid">
+      <div class="table-wrap"><table><thead><tr><th>Puerto</th><th>Protocolo</th><th>Descripción</th><th>${data.firewallManaged ? 'Regla del Firewall' : 'Gestión de red'}</th><th></th></tr></thead><tbody>${data.ports.map(port => `<tr><td>${port.port}</td><td>${esc(port.protocol)}</td><td>${esc(port.description)}</td><td>${port.primary ? 'Principal' : esc(port.firewall_profile === 'Manual' ? 'Manual' : port.firewall_profile)}</td><td>${port.primary ? '<span class="badge">Principal</span>' : `<button class="btn btn-danger" data-remove-port="${esc(port.id)}">${data.firewallManaged ? 'Cerrar puerto' : 'Quitar asignación'}</button>`}</td></tr>`).join('')}</tbody></table></div></section>
+      <section class="card mt"><div class="section-title"><div><h2>Añadir puerto</h2><p>${data.firewallManaged ? 'La regla se crea explícitamente al guardar.' : 'El puerto se registra aquí; configura el firewall del sistema manualmente si lo necesitas.'}</p></div></div><form id="network-form" class="form-grid">
       <label class="field">Puerto<input class="input" type="number" name="port" min="1024" max="65535" required placeholder="25575"></label>
       <label class="field">Protocolo<select class="select" name="protocol"><option>TCP</option><option>UDP</option></select></label>
       <label class="field">Descripción<input class="input" name="description" maxlength="80" placeholder="RCON, query, plugin..."></label>
@@ -440,12 +443,12 @@ async function renderNetwork() {
     document.getElementById('network-form').addEventListener('submit', async event => {
       event.preventDefault();
       const body = Object.fromEntries(new FormData(event.currentTarget)); body.port = Number(body.port);
-      try { await api(`/api/servers/${state.server.id}/network`, { method: 'POST', body: JSON.stringify(body) }); toast('Puerto asignado y regla de Firewall creada.'); renderNetwork(); }
+      try { await api(`/api/servers/${state.server.id}/network`, { method: 'POST', body: JSON.stringify(body) }); toast(data.firewallManaged ? 'Puerto asignado y regla de Firewall creada.' : 'Puerto asignado al servidor.'); renderNetwork(); }
       catch (error) { toast(error.message, true); }
     });
     box.querySelectorAll('[data-remove-port]').forEach(button => button.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar la regla entrante de Windows Firewall para este puerto?')) return;
-      try { await api(`/api/servers/${state.server.id}/network/${button.dataset.removePort}`, { method: 'DELETE' }); toast('Regla eliminada y puerto cerrado.'); renderNetwork(); }
+      if (!confirm(data.firewallManaged ? '¿Eliminar la regla entrante de Windows Firewall para este puerto?' : '¿Quitar esta asignación de puerto?')) return;
+      try { await api(`/api/servers/${state.server.id}/network/${button.dataset.removePort}`, { method: 'DELETE' }); toast(data.firewallManaged ? 'Regla eliminada y puerto cerrado.' : 'Asignación de puerto eliminada.'); renderNetwork(); }
       catch (error) { toast(error.message, true); }
     }));
   } catch (error) { box.innerHTML = `<div class="notice error-notice">${esc(error.message)}</div>`; }
@@ -549,7 +552,7 @@ async function renderDatabases() {
       mysqlState = await api('/api/admin/database/status');
     }
     box.innerHTML = `${serverModuleHeading('Base de datos', 'Crea bases MySQL aisladas y credenciales dedicadas para plugins.', 'database')}
-      ${!data.available ? `<section class="card"><div class="empty"><span class="empty-icon">${icon('database', 32)}</span><strong>MySQL Server no está instalado</strong><span>Un administrador puede instalar MySQL 8.4 desde winget. El instalador interactivo se abrirá en una ventana aparte y puede solicitar permisos de Windows.</span>${state.user.role === 'admin' ? `<button id="install-mysql" class="btn btn-primary" ${mysqlState?.installRunning ? 'disabled' : ''}>${mysqlState?.installRunning ? 'Instalación en curso…' : 'Instalar MySQL Server'}</button>` : ''}</div></section>` : `<section class="card"><div class="section-title"><div><h2>Bases asignadas</h2><p>La contraseña de la cuenta root se solicita solo al crear/eliminar; no se guarda en NexoryPanel.</p></div><button id="new-database" class="btn btn-primary">＋ Nueva base</button></div>
+      ${!data.available ? `<section class="card"><div class="empty"><span class="empty-icon">${icon('database', 32)}</span><strong>MySQL Server no está instalado</strong><span>${mysqlState?.installSupported ? 'Un administrador puede instalar MySQL Server 8.4 desde el instalador oficial de Windows.' : 'Instala MySQL Server 8.4 y el cliente mysql desde el gestor de paquetes de tu sistema. El cliente debe estar disponible en PATH.'}</span>${state.user.role === 'admin' && mysqlState?.installSupported ? `<button id="install-mysql" class="btn btn-primary" ${mysqlState.installRunning ? 'disabled' : ''}>${mysqlState.installRunning ? 'Instalación en curso…' : 'Instalar MySQL Server'}</button>` : '<a class="btn mt" href="https://dev.mysql.com/downloads/mysql/" target="_blank" rel="noreferrer">Descargas oficiales de MySQL ↗</a>'}</div></section>` : `<section class="card"><div class="section-title"><div><h2>Bases asignadas</h2><p>La contraseña de la cuenta root se solicita solo al crear/eliminar; no se guarda en NexoryPanel.</p></div><button id="new-database" class="btn btn-primary">＋ Nueva base</button></div>
       <div class="table-wrap"><table><thead><tr><th>Base de datos</th><th>Usuario MySQL</th><th>Host</th><th>Creada</th><th></th></tr></thead><tbody>${data.databases.length ? data.databases.map(database => `<tr><td>${esc(database.database_name)}</td><td>${esc(database.username)}</td><td>127.0.0.1:3306</td><td>${esc(database.created_at)}</td><td><button class="btn btn-danger" data-delete-db="${database.id}">Eliminar</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty-row">Todavía no hay bases asignadas.</td></tr>'}</tbody></table></div></section>`}`;
     document.getElementById('install-mysql')?.addEventListener('click', async () => {
       if (!confirm('Se abrirá el instalador oficial de MySQL Server 8.4 mediante winget. ¿Continuar?')) return;
@@ -1119,7 +1122,7 @@ async function renderAdmin() {
       ${pageHeading('Administración', 'Configura el nodo, las cuotas y las cuentas del panel.')}
       <div class="grid stat-grid">${statCard('RAM DEL NODO', `${(data.allocation.ramMb / 1024).toFixed(1)} GiB`, `de ${(maxRam / 1024).toFixed(1)} GiB asignables`, '▤')}${statCard('DISCO ASIGNADO', `${(data.allocation.diskMb / 1024).toFixed(1)} GiB`, `de ${(maxDisk / 1024).toFixed(1)} GiB configurados`, '▱')}${statCard('USUARIOS', data.users.length, 'Cuentas locales', '♙')}${statCard('SERVIDORES', data.servers.length, data.settings.nodeName, '◇')}</div>
       <div class="grid admin-grid">
-        <section class="card"><div class="section-title"><div><h2>Configuración del nodo</h2><p>Las cuotas limitan los recursos nuevos asignables.</p></div><span class="badge">Windows</span></div>
+        <section class="card"><div class="section-title"><div><h2>Configuración del nodo</h2><p>Las cuotas limitan los recursos nuevos asignables.</p></div><span class="badge">${esc(data.settings.platformLabel)}</span></div>
           <form id="settings-form">
             <label class="field">Nombre del nodo<input class="input" name="nodeName" maxlength="60" value="${esc(data.settings.nodeName)}"></label>
             <div class="form-grid"><label class="field">Límite RAM (MiB)<input class="input" type="number" min="${data.allocation.ramMb || 512}" name="maxRamMb" value="${maxRam}"></label><label class="field">Límite almacenamiento (MiB)<input class="input" type="number" min="${Math.max(1024, data.allocation.diskMb)}" name="maxDiskMb" value="${maxDisk}"></label></div>
@@ -1136,7 +1139,7 @@ async function renderAdmin() {
               <div class="section-divider"></div>
               <label class="field">Anuncio para el panel<input class="input" name="announcement" maxlength="300" value="${esc(data.settings.announcement)}" placeholder="Mantenimiento este viernes..."></label>
               <div class="form-grid"><label class="field">Enlace de Discord<input class="input" type="url" name="discordUrl" value="${esc(data.settings.discordUrl)}" placeholder="https://discord.gg/..."></label>
-              <label class="field">Perfil de Windows Firewall<select class="select" name="firewallProfile">${[['Any','Todos los perfiles'],['Private','Privado'],['Domain','Dominio'],['Public','Público']].map(([value,label]) => `<option value="${value}" ${value === data.settings.firewallProfile ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
+              ${data.settings.firewallManaged ? `<label class="field">Perfil de Windows Firewall<select class="select" name="firewallProfile">${[['Any','Todos los perfiles'],['Private','Privado'],['Domain','Dominio'],['Public','Público']].map(([value,label]) => `<option value="${value}" ${value === data.settings.firewallProfile ? 'selected' : ''}>${label}</option>`).join('')}</select></label>` : '<div class="notice">La administración de firewall del sistema se configura fuera de NexoryPanel.</div>'}</div>
               <label class="field">URLs personalizadas (una por línea: etiqueta|https://...)<textarea class="textarea" name="customLinks" rows="3" maxlength="4000">${esc(data.settings.customLinks.map(link => `${link.label}|${link.url}`).join('\n'))}</textarea></label>
               ${toggleRow('enableRegister', 'Enable Register', 'Permite crear cuentas nuevas.', data.settings.enableRegister)}
               ${toggleRow('apiKeyEnabled', 'API key del dashboard', 'Habilita el endpoint de lectura /api/dashboard.', data.settings.apiKeyEnabled)}
@@ -1147,8 +1150,8 @@ async function renderAdmin() {
         <section class="card"><div class="section-title"><div><h2>Identidad visual</h2><p>El icono PNG se muestra en el navegador y la navegación.</p></div>${data.settings.hasCustomIcon ? `<img class="server-icon-preview" src="/api/branding/icon?t=${Date.now()}" alt="Icono del panel">` : ''}</div>
           <form id="branding-icon-form" class="form-grid"><label class="field">Icono personalizado (PNG, hasta 512×512)<input class="input" type="file" name="icon" accept="image/png" required></label><div class="field form-end"><span></span><div class="row wrap"><button class="btn btn-primary">${icon('image', 15)} Subir icono</button>${data.settings.hasCustomIcon ? '<button type="button" class="btn btn-danger" id="reset-branding-icon">Restaurar icono original</button>' : ''}</div></div></form>
         </section>
-        <section class="card"><div class="section-title"><div><h2>Base de datos MySQL local</h2><p>MySQL Server 8.4 se instala de forma interactiva desde winget.</p></div><span class="badge">${mysqlStatus.installed ? 'Instalado' : mysqlStatus.installRunning ? 'Instalando' : 'No instalado'}</span></div>
-          <p class="muted tiny">Las bases MySQL creadas desde un servidor aparecen en su sección Base de datos. El instalador puede solicitar permisos de Windows.</p><button id="install-mysql-admin" class="btn" ${mysqlStatus.installRunning ? 'disabled' : ''}>${icon('database', 15)} Abrir instalador de MySQL</button>
+        <section class="card"><div class="section-title"><div><h2>Base de datos MySQL local</h2><p>${mysqlStatus.installSupported ? 'MySQL Server 8.4 se instala de forma interactiva desde winget.' : 'Instala MySQL Server 8.4 con el gestor de paquetes de tu sistema y deja mysql disponible en PATH.'}</p></div><span class="badge">${mysqlStatus.installed ? 'Instalado' : mysqlStatus.installRunning ? 'Instalando' : 'No instalado'}</span></div>
+          <p class="muted tiny">Las bases MySQL creadas desde un servidor aparecen en su sección Base de datos. ${mysqlStatus.installSupported ? 'El instalador puede solicitar permisos de Windows.' : ''}</p>${mysqlStatus.installSupported ? `<button id="install-mysql-admin" class="btn" ${mysqlStatus.installRunning ? 'disabled' : ''}>${icon('database', 15)} Abrir instalador de MySQL</button>` : '<a class="btn mt" href="https://dev.mysql.com/downloads/mysql/" target="_blank" rel="noreferrer">Descargas oficiales de MySQL ↗</a>'}
         </section>
         <section class="card"><div class="section-title"><div><h2>API para dashboard</h2><p>Las claves se muestran una sola vez; almacena un hash en la base de datos.</p></div><button id="new-api-key" class="btn btn-primary">＋ Crear key</button></div>
           <div id="api-key-output"></div>
@@ -1194,7 +1197,7 @@ async function renderAdmin() {
     document.getElementById('new-api-key').addEventListener('click', createApiKey);
     document.getElementById('branding-icon-form').addEventListener('submit', uploadBrandingIcon);
     document.getElementById('reset-branding-icon')?.addEventListener('click', resetBrandingIcon);
-    document.getElementById('install-mysql-admin').addEventListener('click', installMysql);
+    document.getElementById('install-mysql-admin')?.addEventListener('click', installMysql);
     content.querySelectorAll('[data-delete-key]').forEach(button => button.addEventListener('click', () => removeApiKey(button.dataset.deleteKey)));
     document.getElementById('create-server-admin').addEventListener('click', openCreateServer);
   } catch (error) {
@@ -1366,7 +1369,8 @@ async function boot() {
       announcement: result.announcement || '',
       discordUrl: result.discordUrl || '',
       customLinks: result.customLinks || [],
-      nodeName: result.nodeName || 'Nexory Windows Node',
+      nodeName: result.nodeName || 'Nexory Node',
+      platformLabel: result.platformLabel || 'Windows',
     };
     setTheme(result.theme, state.settings.accentColor, state.settings.buttonStyle, state.settings.backgroundStyle, state.settings.backgroundStart, state.settings.backgroundEnd);
     if (!state.user) {
