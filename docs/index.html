@@ -4,15 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090a14">
-  <meta name="description" content="NexoryPanel: administra tus servidores Minecraft Java desde un panel local para Windows, con consola, archivos, backups y mucho más.">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="description" content="Descarga NexoryPanel desde GitHub Releases. Panel local para administrar servidores Minecraft Java en Windows, con consola, archivos, backups y más.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; form-action 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; upgrade-insecure-requests">
   <meta property="og:title" content="NexoryPanel — Tu servidor, bajo control">
   <meta property="og:description" content="Un panel moderno para gestionar servidores Minecraft Java en Windows.">
   <meta property="og:type" content="website">
   <title>NexoryPanel — Tu servidor, bajo control</title>
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="./assets/icon.png">
   <link rel="stylesheet" href="./styles.css">
   <script src="./app.js" defer></script>
 </head>
@@ -21,7 +20,7 @@
   <div class="page-glow page-glow-bottom" aria-hidden="true"></div>
   <header class="site-header">
     <a class="brand" href="#inicio" aria-label="NexoryPanel, inicio">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M20 3 35 11.5v17L20 37 5 28.5v-17L20 3Z"/><path d="m12 25 8-14 8 14M15.5 19h9"/></svg></span>
+      <img class="brand-mark" src="./assets/icon.png" width="32" height="32" alt="">
       <span>NEXORY<span class="brand-light">PANEL</span></span>
     </a>
     <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="Abrir menú"><span></span><span></span></button>
@@ -52,41 +51,13 @@
 
       <div class="hero-art reveal" data-tilt>
         <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
-        <div class="art-star star-one">✦</div><div class="art-star star-two">✧</div><div class="art-star star-three">✦</div>
+        <div class="art-star star-one" aria-hidden="true">✦</div><div class="art-star star-two" aria-hidden="true">✧</div><div class="art-star star-three" aria-hidden="true">✦</div>
         <div class="art-glow"></div>
-        <div class="dashboard-preview" aria-label="Vista previa del dashboard de NexoryPanel">
-          <div class="preview-sidebar">
-            <div class="preview-brand"><span class="mini-mark">N</span><span>Nexory<span>Panel</span></span></div>
-            <div class="preview-node"><i></i> NODO LOCAL</div>
-            <div class="preview-nav active"><span>◈</span> Dashboard</div>
-            <div class="preview-nav"><span>⌘</span> Consola</div>
-            <div class="preview-nav"><span>▤</span> Archivos</div>
-            <div class="preview-nav"><span>◷</span> Backups</div>
-            <div class="preview-user"><span class="user-avatar">N</span><span>Tu servidor<small>Administrador</small></span><span class="user-online"></span></div>
-          </div>
-          <div class="preview-main">
-            <div class="preview-topbar"><span>MI SERVIDOR <b>/</b> DASHBOARD</span><span class="preview-top-user">● &nbsp;LOCAL</span></div>
-            <div class="preview-title-row"><div><div class="preview-kicker">NEXORY / INSTANCIAS</div><h2 id="preview-heading">¡Hola, administrador!</h2><p id="preview-description">Todo listo para tu próxima aventura.</p></div><span class="server-state"><i></i> En línea</span></div>
-            <div class="preview-stats">
-              <div class="preview-stat"><span>CPU</span><b id="preview-cpu">18<span>%</span></b><div class="sparkline spark-purple"><i></i></div></div>
-              <div class="preview-stat"><span>MEMORIA</span><b id="preview-ram">4.2<span> GB</span></b><div class="meter"><i style="width: 46%"></i></div></div>
-              <div class="preview-stat"><span>JUGADORES</span><b id="preview-players">06<span> / 20</span></b><div class="avatar-stack"><i>J</i><i>A</i><i>M</i><small>+3</small></div></div>
-            </div>
-            <div class="preview-console">
-              <div class="console-head"><span id="preview-tab-label">ACTIVIDAD RECIENTE</span><span class="console-live"><i></i> LIVE</span></div>
-              <div class="console-row"><time>12:42:06</time><span class="console-green">[INFO]</span><span id="preview-line-one">Servidor iniciado en 4.82s</span></div>
-              <div class="console-row"><time>12:42:09</time><span class="console-purple">[JOIN]</span><span id="preview-line-two">Alex se ha unido al servidor</span></div>
-              <div class="console-row"><time>12:42:12</time><span class="console-blue">[INFO]</span><span id="preview-line-three">Preparando el mundo «Nexoria»...</span></div>
-            </div>
-            <div class="preview-tabs" role="tablist" aria-label="Vista previa del panel">
-              <button class="preview-tab is-active" type="button" role="tab" aria-selected="true" data-preview="dashboard">Overview</button>
-              <button class="preview-tab" type="button" role="tab" aria-selected="false" data-preview="console">Consola</button>
-              <button class="preview-tab" type="button" role="tab" aria-selected="false" data-preview="files">Archivos</button>
-            </div>
-          </div>
-        </div>
-        <div class="floating-chip chip-version"><span>✦</span> Paper · 1.21</div>
-        <div class="floating-chip chip-secure"><span>⌁</span> Tu equipo, tus datos</div>
+        <a class="hero-screenshot" href="./assets/servers-overview.webp" target="_blank" rel="noreferrer" aria-label="Abrir la captura real de NexoryPanel a tamaño completo">
+          <img src="./assets/servers-overview.webp" alt="Vista real de NexoryPanel: panel de servidores, recursos del nodo y opción para crear una instancia." width="1571" height="768" fetchpriority="high" decoding="async">
+        </a>
+        <div class="floating-chip chip-version"><span aria-hidden="true">✦</span> Paper · 1.21</div>
+        <div class="floating-chip chip-secure"><span aria-hidden="true">⌁</span> Tu equipo, tus datos</div>
       </div>
       <a class="scroll-cue" href="#funciones"><span></span> DESCUBRE EL PANEL</a>
     </section>
@@ -138,7 +109,7 @@
       <div class="how-art reveal">
         <div class="how-glow"></div><div class="how-card">
           <div class="how-card-header"><span class="how-dot"></span><span>ESTADO DEL SERVIDOR</span><span class="how-live">EN EJECUCIÓN</span></div>
-          <div class="how-world"><div class="pixel-sun"></div><div class="pixel-mountain mountain-back"></div><div class="pixel-mountain mountain-front"></div><div class="pixel-ground"></div><div class="pixel-cube cube-one"></div><div class="pixel-cube cube-two"></div><div class="pixel-cube cube-three"></div></div>
+          <div class="how-world"><img class="minecraft-world" src="./assets/minecraft-world.webp" alt="Captura real de Minecraft: mundo abierto con terreno de arena, hierba y árboles, tomada por el creador del proyecto." width="1463" height="768" loading="lazy" decoding="async"></div>
           <div class="how-card-footer"><span>✦ &nbsp; NEXORIA SMP</span><span>TPS &nbsp;<b>20.0</b></span><span>ONLINE &nbsp;<b>06</b></span></div>
         </div>
         <div class="orbit-label"><span>✧</span> TU NODO LOCAL</div>
@@ -157,9 +128,10 @@
       <div class="download-backdrop" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="download-content"><div class="eyebrow"><span class="status-pulse"></span> TU PRÓXIMA AVENTURA EMPIEZA AQUÍ</div><h2>Prepara el mundo.<br><span class="gradient-text">Invita a tu gente.</span></h2><p>NexoryPanel para Windows, a un clic de distancia.</p>
         <a class="button button-primary button-download" href="https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel.exe" data-download><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v10m0 0 4-4m-4 4L6 8m-2 5v4h12v-4"/></svg>Descargar para Windows</a>
-        <span class="download-note">Windows 10 / 11 · Instalador .exe · Descarga desde GitHub</span>
+        <span class="download-note">Windows 10 / 11 · Ejecutable sin firma digital · Descarga oficial de GitHub</span>
+        <a class="checksum-link" href="./assets/NexoryPanel-v0.1.0.exe.sha256" target="_blank" rel="noreferrer">SHA-256 del instalador v0.1.0 <span aria-hidden="true">↗</span></a>
       </div>
-      <div class="download-graphic" aria-hidden="true"><div class="download-ring ring-a"></div><div class="download-ring ring-b"></div><div class="download-cube"><div class="cube-face cube-top"></div><div class="cube-face cube-left"></div><div class="cube-face cube-right"></div><span>✦</span></div><i class="graphic-spark spark-a">✧</i><i class="graphic-spark spark-b">✦</i></div>
+      <div class="download-graphic" aria-hidden="true"><div class="download-ring ring-a"></div><div class="download-ring ring-b"></div><img class="download-logo" src="./assets/icon.png" width="160" height="160" alt="" loading="lazy" decoding="async"><i class="graphic-spark spark-a">✧</i><i class="graphic-spark spark-b">✦</i></div>
     </section>
 
     <section class="faq section-wrap section-space" id="preguntas">
@@ -174,7 +146,7 @@
   </main>
 
   <footer class="site-footer section-wrap">
-    <a class="brand" href="#inicio"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M20 3 35 11.5v17L20 37 5 28.5v-17L20 3Z"/><path d="m12 25 8-14 8 14M15.5 19h9"/></svg></span><span>NEXORY<span class="brand-light">PANEL</span></span></a>
+    <a class="brand" href="#inicio"><img class="brand-mark" src="./assets/icon.png" width="32" height="32" alt=""><span>NEXORY<span class="brand-light">PANEL</span></span></a>
     <p>Creado para tener tu mundo en tus manos.</p>
     <div><a href="https://github.com/FelixDevvv/nexorypanel" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://github.com/FelixDevvv/nexorypanel/releases" target="_blank" rel="noreferrer">Releases ↗</a></div>
     <small>© <span id="year"></span> NexoryPanel · Proyecto independiente. Minecraft es una marca de Mojang Studios.</small>

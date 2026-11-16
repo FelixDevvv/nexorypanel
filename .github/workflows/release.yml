@@ -32,6 +32,11 @@ jobs:
           python -m pip install -r requirements.txt pyinstaller
       - name: Build Windows executable
         run: pyinstaller --noconfirm --clean --distpath . NexoryPanel.spec
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash NexoryPanel.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  NexoryPanel.exe" | Set-Content -Path NexoryPanel.exe.sha256 -Encoding ascii
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -39,4 +44,6 @@ jobs:
           name: NexoryPanel ${{ inputs.tag || github.ref_name }}
           generate_release_notes: true
           make_latest: true
-          files: NexoryPanel.exe
+          files: |
+            NexoryPanel.exe
+            NexoryPanel.exe.sha256

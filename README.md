@@ -20,8 +20,10 @@ Ejecuta `build-exe.bat`; el ejecutable se genera en la carpeta raíz del proyect
 - Sitio público: <https://felixdevvv.github.io/nexorypanel/>
 - Código y versiones: <https://github.com/FelixDevvv/nexorypanel>
 - Descarga para Windows: <https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel.exe>
+- SHA-256 de la versión v0.1.0: `docs\assets\NexoryPanel-v0.1.0.exe.sha256`
+- En versiones futuras, el Release incluirá automáticamente su archivo `NexoryPanel.exe.sha256`.
 
-La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`, GitHub Actions compila el ejecutable para Windows y lo adjunta a un Release para que el enlace de descarga apunte siempre a la versión más reciente.
+La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`, GitHub Actions compila el ejecutable para Windows, calcula su suma SHA-256 y adjunta ambos archivos a un Release. La suma permite comprobar que el archivo descargado coincide con el publicado; no acredita quién lo creó ni reemplaza una firma digital.
 
 ## Funcionalidad incluida
 
