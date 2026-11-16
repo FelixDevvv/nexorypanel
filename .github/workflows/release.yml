@@ -103,8 +103,41 @@ jobs:
           path: release/*
           if-no-files-found: error
 
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run Android tests and build APK
+        working-directory: android
+        run: ./gradlew --no-daemon :app:testReleaseUnitTest :app:assembleRelease
+      - name: Package Android release
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/release/app-release.apk release/NexoryPanel-android.apk
+          (cd release && sha256sum NexoryPanel-android.apk > NexoryPanel-android.apk.sha256)
+      - name: Upload Android release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: release/*
+          if-no-files-found: error
+
   publish:
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - name: Download platform release assets
@@ -128,3 +161,5 @@ jobs:
             release/NexoryPanel-macos-architecture.txt
             release/NexoryPanel-linux-x86_64.tar.gz
             release/NexoryPanel-linux-x86_64.tar.gz.sha256
+            release/NexoryPanel-android.apk
+            release/NexoryPanel-android.apk.sha256

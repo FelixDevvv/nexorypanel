@@ -21,8 +21,11 @@ macOS y Linux pueden ejecutarse desde el código con `bash start.sh`. Los paquet
 - Descarga para Windows: <https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel.exe>
 - Descarga para macOS: <https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel-macos.zip>
 - Descarga para Linux x86_64: <https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel-linux-x86_64.tar.gz>
+- App Android: <https://github.com/FelixDevvv/nexorypanel/releases/latest/download/NexoryPanel-android.apk>
 
-La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`, GitHub Actions prueba y compila una versión por sistema operativo y publica cada paquete junto con su archivo SHA-256. El checksum detecta cambios en el archivo, pero no verifica la identidad del editor ni sustituye una firma digital.
+La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`, GitHub Actions prueba y compila una versión por sistema operativo y publica cada paquete junto con su archivo SHA-256. La app Android es un cliente WebView: al abrirla, introduce la URL HTTPS del panel ya alojado; no ejecuta el backend ni servidores Minecraft en el teléfono. El APK de GitHub se firma con una clave de depuración temporal y no está preparado para Google Play; una actualización con otra clave requiere reinstalar la app. El checksum detecta cambios en el archivo, pero no verifica la identidad del editor ni sustituye una firma digital.
+
+Para compilar Android localmente, instala Android SDK 36 y Java 21 y ejecuta `.\gradlew.bat :app:testReleaseUnitTest :app:assembleRelease` desde `android\`. El APK de prueba se genera en `android\app\build\outputs\apk\release\app-release.apk`. El cliente solo acepta HTTPS y bloquea enlaces a otros dominios. El panel existente escucha únicamente en `127.0.0.1`; para usar Android, aloja el panel detrás de un proxy HTTPS seguro y accesible. No expongas directamente el servidor de desarrollo a Internet.
 
 ## Funcionalidad incluida
 
