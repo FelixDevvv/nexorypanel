@@ -242,6 +242,8 @@ tr:last-child td { border-bottom: 0; }
 .software-choice-image { width: 37px; height: 37px; object-fit: contain; }
 .software-choice:hover { border-color: #65538f; color: var(--text); }
 .software-choice.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, #191827); color: #eee8ff; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent); }
+.software-choice:disabled { cursor: not-allowed; opacity: .45; }
+.software-choice:disabled:hover { border-color: var(--border); color: #b7b2c7; }
 .version-card { padding: 21px; }
 .software-field { grid-column: 1 / -1; }
 .version-note { margin-top: 3px; color: var(--muted); font-size: 11px; }

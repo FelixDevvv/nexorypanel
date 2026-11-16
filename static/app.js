@@ -18,15 +18,16 @@ const state = {
 };
 
 const SOFTWARE_OPTIONS = [
-  { id: 'paper', name: 'PaperMC', image: 'paper.svg' },
-  { id: 'purpur', name: 'PurpurMC', image: 'purpur.svg' },
-  { id: 'vanilla', name: 'Vanilla', image: 'vanilla.svg' },
-  { id: 'folia', name: 'FoliaMC', image: 'folia.svg' },
-  { id: 'forge', name: 'Forge', image: 'forge.svg' },
-  { id: 'neoforge', name: 'NeoForge', image: 'neoforge.svg' },
+  { id: 'paper', name: 'PaperMC', image: 'paper.png' },
+  { id: 'folia', name: 'FoliaMC', image: 'folia.png' },
+  { id: 'forge', name: 'Forge', image: 'forge.png' },
+  { id: 'purpur', name: 'PurpurMC', image: 'purpur.png' },
+  { id: 'mohist', name: 'Mohist', image: 'mohist.png' },
+  { id: 'arclight', name: 'Arclight', image: 'arclight.png' },
+  { id: 'neoforge', name: 'NeoForge', image: 'neoforge.png' },
+  { id: 'vanilla', name: 'Minecraft Vanilla', image: 'vanilla.png' },
+  { id: 'bedrock', name: 'Minecraft Bedrock', image: 'bedrock.png' },
   { id: 'fabric', name: 'Fabric', image: 'fabric.svg' },
-  { id: 'mohist', name: 'Mohist', image: 'mohist.svg' },
-  { id: 'arclight', name: 'Arclight', image: 'arclight.svg' },
 ];
 
 const icons = {
@@ -71,7 +72,15 @@ function icon(name, size = 18) {
 }
 
 function softwareInfo(id) {
-  return SOFTWARE_OPTIONS.find(software => software.id === id) || { name: id, image: 'vanilla.svg' };
+  return SOFTWARE_OPTIONS.find(software => software.id === id) || { name: id, image: 'vanilla.png' };
+}
+
+function softwareNeedsBuild(id) {
+  return !['vanilla', 'bedrock'].includes(id);
+}
+
+function softwareUnavailable(id) {
+  return id === 'bedrock' && state.settings?.platformLabel === 'macOS';
 }
 
 function softwareImage(id, className = 'software-choice-image') {
@@ -80,7 +89,7 @@ function softwareImage(id, className = 'software-choice-image') {
 }
 
 function softwareChoiceButtons(selected, attribute) {
-  return SOFTWARE_OPTIONS.map(software => `<button type="button" class="software-choice ${software.id === selected ? 'active' : ''}" ${attribute}="${software.id}" aria-pressed="${software.id === selected}">
+  return SOFTWARE_OPTIONS.map(software => `<button type="button" class="software-choice ${software.id === selected ? 'active' : ''}" ${attribute}="${software.id}" aria-pressed="${software.id === selected}" ${softwareUnavailable(software.id) ? 'disabled title="Bedrock Dedicated Server no está disponible en macOS"' : ''}>
     ${softwareImage(software.id)}<span>${software.name}</span>
   </button>`).join('');
 }
@@ -366,7 +375,7 @@ function serverCard(server) {
   return `<article class="card server-card">
     <div class="server-banner"><div class="server-software">${server.icon ? `<img class="software-mark server-custom-icon" src="${esc(server.icon)}" alt="">` : softwareImage(server.software, 'software-mark')}<div><h3>${esc(server.name)}</h3><p>${esc(software.name)} · ${esc(server.version)}${server.build ? ` · build ${esc(server.build)}` : ''}</p>${server.description ? `<p>${esc(server.description)}</p>` : ''}</div></div></div>
     <div class="server-body">
-      <div class="server-meta"><span>IP <strong>127.0.0.1:${server.port}</strong></span><span>CPU <strong>${Number(server.cpu || 0).toFixed(1)}%</strong></span><span>RAM <strong>${server.memory || 0} / ${server.ram_mb} MiB</strong></span><span>Disco <strong>${server.diskUsed} / ${server.disk_mb} MiB</strong></span>${server.owner_name ? `<span>Usuario <strong>${esc(server.owner_name)}</strong></span>` : ''}</div>
+      <div class="server-meta"><span>IP <strong>127.0.0.1:${server.port}/${esc(server.protocol || 'TCP')}</strong></span><span>CPU <strong>${Number(server.cpu || 0).toFixed(1)}%</strong></span><span>RAM <strong>${server.memory || 0} / ${server.ram_mb} MiB</strong></span><span>Disco <strong>${server.diskUsed} / ${server.disk_mb} MiB</strong></span>${server.owner_name ? `<span>Usuario <strong>${esc(server.owner_name)}</strong></span>` : ''}</div>
       <div class="server-actions"><span class="status ${status}">${server.status === 'online' ? 'En línea' : server.status === 'starting' ? 'Iniciando' : 'Apagado'}</span><div class="row"><button class="btn btn-primary" data-server="${esc(server.id)}">Administrar →</button>${state.user.role === 'admin' ? `<button class="btn btn-danger" data-delete-server="${esc(server.id)}" title="Eliminar servidor">×</button>` : ''}</div></div>
     </div>
   </article>`;
@@ -982,13 +991,19 @@ async function renderVersions() {
   async function loadVersions() {
     versionSelect.innerHTML = '<option value="">Cargando…</option>';
     buildSelect.innerHTML = '<option value="">Selecciona una versión</option>';
-    buildField.style.display = selectedSoftware === 'vanilla' ? 'none' : '';
-    versionNote.textContent = selectedSoftware === 'vanilla' ? 'Vanilla no utiliza números de build.' : 'Las builds disponibles dependen de la versión seleccionada.';
-    document.getElementById('software-install-note').textContent = ['forge', 'neoforge'].includes(selectedSoftware)
-      ? 'Ejecuta el instalador oficial y prepara sus archivos de inicio; conserva los demás archivos del servidor.'
-      : selectedSoftware === 'fabric'
-        ? 'Instala el launcher Fabric y el JAR vanilla requerido; conserva los demás archivos.'
-        : 'Reemplaza server.jar; los demás archivos del servidor se conservan.';
+    buildField.style.display = softwareNeedsBuild(selectedSoftware) ? '' : 'none';
+    versionNote.textContent = selectedSoftware === 'vanilla'
+      ? 'Vanilla no utiliza números de build.'
+      : selectedSoftware === 'bedrock'
+        ? 'Usa la versión estable oficial. Bedrock requiere Windows o Ubuntu Linux; no hay servidor oficial para macOS.'
+        : 'Las builds disponibles dependen de la versión seleccionada.';
+    document.getElementById('software-install-note').textContent = selectedSoftware === 'bedrock'
+      ? 'Descarga y extrae el paquete oficial de Mojang; el servidor usa el puerto UDP indicado.'
+      : ['forge', 'neoforge'].includes(selectedSoftware)
+        ? 'Ejecuta el instalador oficial y prepara sus archivos de inicio; conserva los demás archivos del servidor.'
+        : selectedSoftware === 'fabric'
+          ? 'Instala el launcher Fabric y el JAR vanilla requerido; conserva los demás archivos.'
+          : 'Reemplaza server.jar; los demás archivos del servidor se conservan.';
     try {
       const data = await api(`/api/software/${selectedSoftware}/versions`);
       const versions = data.versions || [];
@@ -999,14 +1014,14 @@ async function renderVersions() {
       if (selectedSoftware === state.server.software && state.server.version && !versions.some(v => versionId(v) === state.server.version)) {
         versionSelect.insertAdjacentHTML('afterbegin', `<option selected value="${esc(state.server.version)}">${esc(state.server.version)} (actual)</option>`);
       }
-      if (selectedSoftware === 'vanilla') buildSelect.innerHTML = '<option value="">No aplica</option>';
+      if (!softwareNeedsBuild(selectedSoftware)) buildSelect.innerHTML = '<option value="">No aplica</option>';
       else await loadBuilds();
     } catch (error) {
       versionSelect.innerHTML = `<option value="">${esc(error.message)}</option>`;
     }
   }
   async function loadBuilds() {
-    if (selectedSoftware === 'vanilla') return;
+    if (!softwareNeedsBuild(selectedSoftware)) return;
     const version = versionSelect.value;
     if (!version) return;
     buildSelect.innerHTML = '<option value="">Cargando builds…</option>';
@@ -1027,7 +1042,7 @@ async function renderVersions() {
   installButton.addEventListener('click', async () => {
     const version = versionSelect.value;
     if (!version) return toast('Selecciona una versión.', true);
-    if (selectedSoftware !== 'vanilla' && !buildSelect.value) return toast('Selecciona una build antes de instalar.', true);
+    if (softwareNeedsBuild(selectedSoftware) && !buildSelect.value) return toast('Selecciona una build antes de instalar.', true);
     if (!confirm(`¿Instalar ${softwareInfo(selectedSoftware).name} ${version}${buildSelect.value ? ` (build ${buildSelect.options[buildSelect.selectedIndex].text})` : ''}? Detén el servidor antes de continuar.`)) return;
     const button = document.getElementById('install-server');
     button.disabled = true;
@@ -1051,9 +1066,14 @@ async function renderPlugins() {
   const box = document.getElementById('server-tab-content');
   box.innerHTML = `<div class="card mb"><div class="section-title"><div><h2>Marketplace de plugins</h2><p>Busca proyectos de Modrinth compatibles con servidores Java.</p></div><div class="row wrap"><span class="badge">Modrinth</span><button id="create-plugin-template" class="btn">＋ Crear plugin Java</button></div></div><form id="plugin-search" class="row"><input class="input" name="query" placeholder="Buscar EssentialsX, LuckPerms…" required><button class="btn btn-primary">Buscar</button></form><div class="notice">Verifica el autor y los permisos del plugin antes de instalarlo. El archivo se guarda en la carpeta plugins/ del servidor.</div></div><div id="plugin-results" class="grid plugin-grid"></div>`;
   document.getElementById('create-plugin-template').addEventListener('click', openPluginTemplate);
-  if (['vanilla', 'forge', 'neoforge', 'fabric'].includes(state.server.software)) {
+  if (['vanilla', 'forge', 'neoforge', 'fabric', 'bedrock'].includes(state.server.software)) {
     document.getElementById('plugin-search').remove();
-    document.getElementById('plugin-results').innerHTML = '<div class="card empty"><strong>Marketplace de plugins no disponible</strong><span>Este software usa mods en lugar de plugins Bukkit. El generador Java sigue disponible.</span></div>';
+    if (state.server.software === 'bedrock') {
+      document.getElementById('create-plugin-template').remove();
+      document.getElementById('plugin-results').innerHTML = '<div class="card empty"><strong>Plugins Java no disponibles</strong><span>Bedrock usa paquetes de comportamiento y recursos, no plugins Java.</span></div>';
+    } else {
+      document.getElementById('plugin-results').innerHTML = '<div class="card empty"><strong>Marketplace de plugins no disponible</strong><span>Este software usa mods en lugar de plugins Bukkit. El generador Java sigue disponible.</span></div>';
+    }
     return;
   }
   document.getElementById('plugin-search').addEventListener('submit', async event => {
@@ -1334,10 +1354,14 @@ async function openCreateServer() {
     const versionSelect = document.getElementById('create-version');
     const buildSelect = document.getElementById('create-build');
     const buildWrap = document.getElementById('create-build-wrap');
+    const portInput = document.querySelector('#create-server-form [name="port"]');
+    const ramInput = document.querySelector('#create-server-form [name="ramMb"]');
+    let suggestedPort = portInput.value;
+    let suggestedRam = ramInput.value;
     async function loadBuilds() {
       const software = softwareSelect.value;
-      buildWrap.style.display = software === 'vanilla' ? 'none' : '';
-      if (software === 'vanilla') {
+      buildWrap.style.display = softwareNeedsBuild(software) ? '' : 'none';
+      if (!softwareNeedsBuild(software)) {
         buildSelect.innerHTML = '<option value="">No aplica</option>';
         return;
       }
@@ -1370,7 +1394,14 @@ async function openCreateServer() {
       }
     }
     document.querySelectorAll('#create-software-choices [data-create-software]').forEach(button => button.addEventListener('click', () => {
-      softwareSelect.value = button.dataset.createSoftware;
+      const selectedSoftware = button.dataset.createSoftware;
+      const nextPort = selectedSoftware === 'bedrock' ? '19132' : '25565';
+      const nextRam = selectedSoftware === 'bedrock' ? '4096' : '2048';
+      if (portInput.value === suggestedPort) portInput.value = nextPort;
+      if (ramInput.value === suggestedRam) ramInput.value = nextRam;
+      suggestedPort = nextPort;
+      suggestedRam = nextRam;
+      softwareSelect.value = selectedSoftware;
       document.querySelectorAll('#create-software-choices [data-create-software]').forEach(option => {
         option.classList.toggle('active', option === button);
         option.setAttribute('aria-pressed', String(option === button));

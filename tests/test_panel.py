@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 TEMP_STORAGE = tempfile.TemporaryDirectory(prefix="nexory-tests-")
 os.environ["NEXORY_DATA_DIR"] = TEMP_STORAGE.name
@@ -322,6 +322,107 @@ class PanelTests(unittest.TestCase):
                         f"/api/software/{software}/versions/1.21.1/builds"
                     )
                     self.assertEqual(available_builds.get_json()["builds"], builds)
+
+    def test_bedrock_download_install_and_native_start(self):
+        registration = self.post(
+            "/api/register", {"username": "root_user", "password": "secure-password-1"}
+        )
+        self.csrf = registration.get_json()["csrfToken"]
+        if panel.sys.platform == "darwin":
+            unsupported = self.post(
+                "/api/servers",
+                {"name": "Bedrock", "ownerId": registration.get_json()["user"]["id"],
+                 "software": "bedrock", "version": "1.26.63.1", "build": "",
+                 "ramMb": 4096, "diskMb": 10240, "port": 19132},
+            )
+            self.assertEqual(unsupported.status_code, 400)
+            self.assertIn("Ubuntu Linux", unsupported.get_json()["error"])
+            return
+
+        download_type, executable_name = panel.bedrock_platform()
+        downloads = {
+            "result": {
+                "links": [
+                    {
+                        "downloadType": "serverBedrockWindows",
+                        "downloadUrl": "https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-1.26.63.1.zip",
+                    },
+                    {
+                        "downloadType": "serverBedrockLinux",
+                        "downloadUrl": "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.63.1.zip",
+                    },
+                ]
+            }
+        }
+        with patch.object(panel, "official_json", return_value=downloads):
+            versions = self.client.get("/api/software/bedrock/versions")
+            builds = self.client.get("/api/software/bedrock/versions/1.26.63.1/builds")
+        self.assertEqual(versions.get_json()["versions"], ["1.26.63.1"])
+        self.assertEqual(builds.get_json()["builds"], [])
+
+        server = self.post(
+            "/api/servers",
+            {"name": "Bedrock", "ownerId": registration.get_json()["user"]["id"],
+             "software": "bedrock", "version": "1.26.63.1", "build": "",
+             "ramMb": 4096, "diskMb": 10240, "port": 19132},
+        )
+        self.assertEqual(server.status_code, 201)
+        server_id = server.get_json()["id"]
+
+        def fake_download(_url, target):
+            with panel.zipfile.ZipFile(target, "w") as archive:
+                archive.writestr(
+                    "server.properties",
+                    "server-port=19132\nserver-portv6=19133\n",
+                )
+                executable = panel.zipfile.ZipInfo(executable_name)
+                executable.external_attr = 0o100755 << 16
+                archive.writestr(executable, b"test server executable")
+
+        with patch.object(panel, "official_json", return_value=downloads), patch.object(
+            panel, "official_download", side_effect=fake_download
+        ):
+            installed = self.post(
+                f"/api/servers/{server_id}/install",
+                {"software": "bedrock", "version": "1.26.63.1", "build": ""},
+            )
+        self.assertEqual(installed.status_code, 200, installed.get_json())
+        self.assertEqual(installed.get_json()["file"], executable_name)
+        server_root = panel.SERVER_DIR / server_id
+        self.assertTrue((server_root / executable_name).is_file())
+        properties = (server_root / "server.properties").read_text(encoding="utf-8")
+        self.assertIn("server-port=19132", properties)
+        self.assertIn("server-portv6=19132", properties)
+        network = self.client.get(f"/api/servers/{server_id}/network").get_json()
+        self.assertEqual(network["ports"][0]["protocol"], "UDP")
+
+        process = Mock()
+        process.poll.return_value = None
+        with patch.object(
+            panel.shutil, "which", side_effect=AssertionError("Bedrock must not require Java")
+        ) as java_lookup, patch.object(
+            panel.subprocess, "Popen", return_value=process
+        ) as process_start, patch.object(panel.threading, "Thread") as monitor_thread:
+            started = self.post(f"/api/servers/{server_id}/power/start", {})
+        self.assertEqual(started.status_code, 200, started.get_json())
+        java_lookup.assert_not_called()
+        self.assertEqual(process_start.call_args.args[0], [str(server_root / executable_name)])
+        monitor_thread.assert_called_once()
+        environment = process_start.call_args.kwargs["env"]
+        if panel.sys.platform.startswith("linux"):
+            self.assertIn(str(server_root), environment["LD_LIBRARY_PATH"])
+        else:
+            self.assertIsNone(environment)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            archive_path = Path(temporary) / "malicious.zip"
+            destination = Path(temporary) / "server"
+            destination.mkdir()
+            with panel.zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("../outside.txt", "not allowed")
+            with self.assertRaises(ValueError):
+                panel.extract_bedrock_archive(archive_path, destination, 0, 1024)
+            self.assertFalse((Path(temporary) / "outside.txt").exists())
 
     def test_server_modules_members_backups_schedules_and_customization(self):
         created = self.post(

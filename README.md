@@ -1,6 +1,6 @@
 # NexoryPanel
 
-Panel local y gratuito de administración de servidores Minecraft Java para Windows, macOS y Linux. Incluye consola, archivos, backups y temas personalizables.
+Panel local y gratuito de administración de servidores Minecraft Java y Bedrock para Windows, macOS y Linux. Incluye consola, archivos, backups y temas personalizables.
 
 ## Ejecutar en desarrollo
 
@@ -29,11 +29,11 @@ La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`,
 - Registro/inicio de sesión local, contraseñas con hash y primera cuenta administradora.
 - Panel de usuario y administración; asignación de servidores, usuarios, RAM, almacenamiento y puerto.
 - Cuotas de asignación por nodo y servidor. Se verifican las operaciones de archivos y el proceso Java se detiene si el almacenamiento administrado excede su cuota. La memoria máxima de Java se configura con `-Xmx`, sin un límite duro de memoria para el proceso.
-- Tipos Paper, Purpur, Vanilla, Folia, Forge, NeoForge, Fabric, Mohist y Arclight. Consulta versiones/builds disponibles y descarga o ejecuta los instaladores oficiales.
+- Tipos Paper, Folia, Forge, Purpur, Mohist, Arclight, NeoForge, Vanilla, Bedrock y Fabric. Consulta las versiones/builds disponibles y descarga o ejecuta los paquetes oficiales.
 - Al administrar un servidor, navegación contextual para Dashboard, Consola, Archivos, Versiones y Plugins; el selector de software muestra nombres claros y las versiones/builds disponibles.
 - Consola local de proceso, estadísticas aproximadas de CPU/RAM y explorador de archivos con búsqueda, renombrado, carpetas, archivos, subida, ZIP y extracción ZIP segura contra rutas fuera del servidor.
 - Editor UTF-8 (máximo 2 MiB) con números de línea, resaltado básico para YAML/Properties/JSON, guardado con Ctrl+S y pestaña para el archivo abierto.
-- Búsqueda e instalación de plugins de Modrinth para software compatible con plugins Bukkit; los mod loaders Forge, NeoForge y Fabric muestran su uso de mods en lugar de plugins.
+- Búsqueda e instalación de plugins de Modrinth para software compatible con plugins Bukkit; los mod loaders y Bedrock no ofrecen plugins Java.
 - Generador de plantilla Maven para plugins Bukkit/Paper con `plugin.yml`, clase Java principal y archivo `pom.xml`.
 - Tema del panel configurable (paletas, color personalizado y estilos de botones Gradient/Solid/Outline/Glass), junto con Enable Register, límites y nombre del nodo.
 - API key opcional para `GET /api/dashboard`; las claves solo se muestran una vez y se almacenan como hash.
@@ -53,6 +53,7 @@ La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`,
 - Mohist ofrece sus versiones/builds en <https://api.mohistmc.com/project/mohist/versions> y el JAR de cada build desde su API oficial.
 - Arclight usa los assets JAR de sus versiones publicadas en <https://github.com/IzzelAliz/Arclight/releases>.
 - El manifiesto de versiones Vanilla es <https://piston-meta.mojang.com/mc/game/version_manifest_v2.json>; el JAR se obtiene del campo `downloads.server.url` de los metadatos de esa versión.
+- Bedrock consulta el endpoint oficial de enlaces <https://net-secondary.web.minecraft-services.net/api/v1.0/download/links> y selecciona el ZIP estable para Windows o Linux. Mojang solo publica el servidor oficial para Windows y Ubuntu Linux (Ubuntu 22.04 LTS o posterior); no hay paquete oficial para macOS ni builds históricos disponibles desde ese endpoint.
 - El marketplace se obtiene de la API de Modrinth: <https://docs.modrinth.com/api/operations/searchProjects/> y <https://docs.modrinth.com/api/operations/getProjectVersions/>.
 
 Las versiones y builds son dinámicas; el panel las consulta a la fuente al crear o instalar una instancia, no las fija en el código.
@@ -63,7 +64,7 @@ Ejecuta `python -m unittest discover -s tests -v` para probar registro/roles, cu
 
 ## Límites importantes
 
-Este MVP es un panel local de un solo nodo. Por seguridad solo escucha en `127.0.0.1`; no lo expongas directamente a Internet ni cambies el host sin añadir TLS, protección de acceso, hardening del servidor y una estrategia de copias de seguridad. Todavía no incluye 2FA, recuperación de contraseñas, nodos remotos ni un límite de disco duro a nivel de Windows/NTFS. Los schedules no se ejecutan si NexoryPanel está cerrado y no se implementa restauración de backups. El generador de plugins crea el esqueleto Maven; compilarlo requiere Java/Maven. El editor de archivos permite actualizar manualmente `eula.txt` a `eula=true` después de aceptar el EULA de Minecraft.
+Este MVP es un panel local de un solo nodo. Por seguridad solo escucha en `127.0.0.1`; no lo expongas directamente a Internet ni cambies el host sin añadir TLS, protección de acceso, hardening del servidor y una estrategia de copias de seguridad. Todavía no incluye 2FA, recuperación de contraseñas, nodos remotos ni un límite de disco duro a nivel de Windows/NTFS. Los schedules no se ejecutan si NexoryPanel está cerrado y no se implementa restauración de backups. El generador de plugins crea el esqueleto Maven; compilarlo requiere Java/Maven. Para servidores Java, el editor de archivos permite actualizar manualmente `eula.txt` a `eula=true` después de aceptar el EULA. Bedrock se inicia con su ejecutable nativo y no requiere Java ni `eula.txt`.
 
 ## Configuración
 

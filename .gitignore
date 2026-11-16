@@ -4,5 +4,6 @@ __pycache__/
 data/
 build/
 dist/
+release-build/
 *.spec.bak
 NexoryPanel.exe

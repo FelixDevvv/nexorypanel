@@ -21,7 +21,7 @@ import zipfile
 import webbrowser
 import xml.etree.ElementTree as ET
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from tempfile import mkdtemp
 from typing import Any
 
@@ -53,18 +53,21 @@ SERVER_DIR = DATA_DIR / "servers"
 DB_PATH = DATA_DIR / "nexory.sqlite3"
 CONFIG_PATH = DATA_DIR / "secret.key"
 SOFTWARE = {
-    "paper": {"name": "PaperMC", "image": "/static/software/paper.svg"},
-    "purpur": {"name": "PurpurMC", "image": "/static/software/purpur.svg"},
-    "folia": {"name": "FoliaMC", "image": "/static/software/folia.svg"},
-    "vanilla": {"name": "Vanilla", "image": "/static/software/vanilla.svg"},
-    "forge": {"name": "Forge", "image": "/static/software/forge.svg"},
-    "neoforge": {"name": "NeoForge", "image": "/static/software/neoforge.svg"},
+    "paper": {"name": "PaperMC", "image": "/static/software/paper.png"},
+    "folia": {"name": "FoliaMC", "image": "/static/software/folia.png"},
+    "forge": {"name": "Forge", "image": "/static/software/forge.png"},
+    "purpur": {"name": "PurpurMC", "image": "/static/software/purpur.png"},
+    "mohist": {"name": "Mohist", "image": "/static/software/mohist.png"},
+    "arclight": {"name": "Arclight", "image": "/static/software/arclight.png"},
+    "neoforge": {"name": "NeoForge", "image": "/static/software/neoforge.png"},
+    "vanilla": {"name": "Minecraft Vanilla", "image": "/static/software/vanilla.png"},
+    "bedrock": {"name": "Minecraft Bedrock", "image": "/static/software/bedrock.png"},
     "fabric": {"name": "Fabric", "image": "/static/software/fabric.svg"},
-    "mohist": {"name": "Mohist", "image": "/static/software/mohist.svg"},
-    "arclight": {"name": "Arclight", "image": "/static/software/arclight.svg"},
 }
 VERSION_ID_PATTERN = re.compile(r"[A-Za-z0-9._+-]{1,32}")
 BUILD_ID_PATTERN = re.compile(r"[A-Za-z0-9._+-]{1,128}")
+NO_BUILD_SOFTWARE = {"vanilla", "bedrock"}
+BEDROCK_DOWNLOAD_API = "https://net-secondary.web.minecraft-services.net/api/v1.0/download/links"
 THEMES = {"Default", "Purple", "Red", "Green", "Blue", "Pterodactyl", "Yellow", "Orange"}
 MAX_EDIT_BYTES = 2 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
@@ -346,61 +349,84 @@ def start_server_process(server: Any) -> tuple[bool, str]:
         process = PROCESSES.get(server_id)
     if process and process.poll() is None:
         return True, "online"
-    jar = root / "server.jar"
-    java = shutil.which("java")
-    if not jar.is_file():
+    is_bedrock = server["software"] == "bedrock"
+    if is_bedrock:
+        try:
+            _, executable_name = bedrock_platform()
+        except RuntimeError as error:
+            return False, str(error)
+        executable = root / executable_name
+        if not executable.is_file():
+            return False, "Instala primero Minecraft Bedrock desde Versiones."
+    elif not (root / "server.jar").is_file():
         return False, "Instala primero server.jar desde Versiones."
-    eula = root / "eula.txt"
-    if not eula.is_file() or "eula=true" not in eula.read_text(encoding="utf-8", errors="ignore").lower():
-        return False, "Acepta el EULA oficial editando eula.txt y vuelve a iniciar."
+    if not is_bedrock:
+        eula = root / "eula.txt"
+        if not eula.is_file() or "eula=true" not in eula.read_text(encoding="utf-8", errors="ignore").lower():
+            return False, "Acepta el EULA oficial editando eula.txt y vuelve a iniciar."
     if folder_size(root) > server["disk_mb"] * 1024 * 1024:
         return False, "El servidor ya supera su límite de almacenamiento. Libera espacio antes de iniciar."
-    if not java:
-        return False, "Java no está instalado o no aparece en PATH."
-    launch_arguments = ["-jar", "server.jar", "nogui"]
-    if server["software"] == "fabric":
-        if not (root / "fabric-server-launch.jar").is_file():
-            return False, "Instala primero Fabric desde Versiones."
-        launch_arguments = ["-jar", "fabric-server-launch.jar", "nogui"]
-    elif server["software"] in {"forge", "neoforge"}:
-        argument_file = "win_args.txt" if os.name == "nt" else "unix_args.txt"
-        if server["software"] == "forge":
-            coordinate = f"{server['version']}-{server['build']}"
-            argument_path = (
-                root / "libraries" / "net" / "minecraftforge" / "forge" / coordinate / argument_file
+    process_environment = None
+    if is_bedrock:
+        launch_command = [str(executable)]
+        if sys.platform.startswith("linux"):
+            process_environment = os.environ.copy()
+            library_paths = [str(root), process_environment.get("LD_LIBRARY_PATH", "")]
+            process_environment["LD_LIBRARY_PATH"] = os.pathsep.join(
+                path for path in library_paths if path
             )
-        else:
-            coordinate = neoforge_coordinate(server["version"], server["build"])
-            argument_path = (
-                root / "libraries" / "net" / "neoforged" / "neoforge" / coordinate / argument_file
-            )
-        if not argument_path.is_file():
-            return False, f"Instala primero {SOFTWARE[server['software']]['name']} desde Versiones."
-        launch_arguments = [f"@{argument_path.relative_to(root).as_posix()}", "nogui"]
-    java_args_text = server_setting(server_id, "java_args", "-Xms256M -Xmx{ram}M")
-    try:
-        java_args = shlex.split(java_args_text.replace("{ram}", str(server["ram_mb"])))
-    except ValueError:
-        return False, "Los argumentos de Java tienen comillas sin cerrar."
-    if len(java_args) > 24 or any(
-        not argument.startswith("-") or any(char in argument for char in "\r\n\x00")
-        for argument in java_args
-    ):
-        return False, "Los argumentos de inicio solo pueden contener opciones JVM válidas."
+    else:
+        java = shutil.which("java")
+        if not java:
+            return False, "Java no está instalado o no aparece en PATH."
+        launch_arguments = ["-jar", "server.jar", "nogui"]
+        if server["software"] == "fabric":
+            if not (root / "fabric-server-launch.jar").is_file():
+                return False, "Instala primero Fabric desde Versiones."
+            launch_arguments = ["-jar", "fabric-server-launch.jar", "nogui"]
+        elif server["software"] in {"forge", "neoforge"}:
+            argument_file = "win_args.txt" if os.name == "nt" else "unix_args.txt"
+            if server["software"] == "forge":
+                coordinate = f"{server['version']}-{server['build']}"
+                argument_path = (
+                    root / "libraries" / "net" / "minecraftforge" / "forge"
+                    / coordinate / argument_file
+                )
+            else:
+                coordinate = neoforge_coordinate(server["version"], server["build"])
+                argument_path = (
+                    root / "libraries" / "net" / "neoforged" / "neoforge"
+                    / coordinate / argument_file
+                )
+            if not argument_path.is_file():
+                return False, f"Instala primero {SOFTWARE[server['software']]['name']} desde Versiones."
+            launch_arguments = [f"@{argument_path.relative_to(root).as_posix()}", "nogui"]
+        java_args_text = server_setting(server_id, "java_args", "-Xms256M -Xmx{ram}M")
+        try:
+            java_args = shlex.split(java_args_text.replace("{ram}", str(server["ram_mb"])))
+        except ValueError:
+            return False, "Los argumentos de Java tienen comillas sin cerrar."
+        if len(java_args) > 24 or any(
+            not argument.startswith("-") or any(char in argument for char in "\r\n\x00")
+            for argument in java_args
+        ):
+            return False, "Los argumentos de inicio solo pueden contener opciones JVM válidas."
+        launch_command = [java, *java_args, *launch_arguments]
     log_file = (root / "console.log").open("ab")
     try:
         new_process = subprocess.Popen(
-            [java, *java_args, *launch_arguments],
+            launch_command,
             cwd=root,
             stdin=subprocess.PIPE,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            env=process_environment,
         )
     except OSError as error:
         log_file.close()
-        logging.exception("No se pudo iniciar Java para %s", server_id)
-        return False, f"No se pudo iniciar Java: {error}"
+        logging.exception("No se pudo iniciar el servidor %s", server_id)
+        return False, f"No se pudo iniciar el servidor: {error}"
     log_file.close()
     with PROCESS_LOCK:
         PROCESSES[server_id] = new_process
@@ -429,6 +455,46 @@ def official_json(url: str) -> Any:
         if response.status != 200:
             raise RuntimeError(f"El servidor oficial respondió HTTP {response.status}.")
         return json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
+
+
+def bedrock_platform() -> tuple[str, str]:
+    if sys.platform == "win32":
+        return "serverBedrockWindows", "bedrock_server.exe"
+    if sys.platform.startswith("linux"):
+        return "serverBedrockLinux", "bedrock_server"
+    raise RuntimeError(
+        "Minecraft Bedrock Dedicated Server oficial solo está disponible para Windows y Ubuntu Linux."
+    )
+
+
+def bedrock_server_downloads() -> dict[str, str]:
+    download_type, _ = bedrock_platform()
+    data = official_json(BEDROCK_DOWNLOAD_API)
+    result = data.get("result") if isinstance(data, dict) else None
+    links = result.get("links") if isinstance(result, dict) else None
+    if not isinstance(links, list):
+        raise ValueError("La API oficial no devolvió una lista de descargas Bedrock.")
+    downloads: dict[str, str] = {}
+    for item in links:
+        if not isinstance(item, dict) or item.get("downloadType") != download_type:
+            continue
+        url = item.get("downloadUrl")
+        parsed = urllib.parse.urlparse(url) if isinstance(url, str) else None
+        match = re.fullmatch(
+            r"/bedrockdedicatedserver/bin-(?:win|linux)/bedrock-server-(?P<version>\d+(?:\.\d+){2,3})\.zip",
+            parsed.path if parsed else "",
+        )
+        if (
+            not parsed
+            or parsed.scheme != "https"
+            or parsed.hostname != "www.minecraft.net"
+            or not match
+        ):
+            raise ValueError("La API oficial devolvió un enlace Bedrock no válido.")
+        downloads[match.group("version")] = url
+    if not downloads:
+        raise RuntimeError("La API oficial no publicó un paquete Bedrock para esta plataforma.")
+    return downloads
 
 
 def official_xml(url: str) -> ET.Element:
@@ -550,7 +616,7 @@ def official_download(url: str, target: Path) -> None:
         "api.purpurmc.org", "fill.papermc.io", "fill-data.papermc.io",
         "piston-data.mojang.com", "cdn.modrinth.com", "meta.fabricmc.net",
         "maven.minecraftforge.net", "maven.neoforged.net", "api.mohistmc.com",
-        "github.com", "mohistmc.com",
+        "github.com", "mohistmc.com", "www.minecraft.net",
     }
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
@@ -711,6 +777,7 @@ def servers():
         status, cpu, memory = server_status(row["id"])
         result.append({**dict(row), "status": status, "cpu": cpu, "memory": memory,
                        "diskUsed": folder_size(SERVER_DIR / row["id"]) // (1024 * 1024),
+                       "protocol": "UDP" if row["software"] == "bedrock" else "TCP",
                        "description": server_setting(row["id"], "description"),
                        "icon": f"/api/servers/{row['id']}/icon" if (SERVER_DIR / row["id"] / "server-icon.png").is_file() else ""})
     return jsonify(result)
@@ -728,13 +795,18 @@ def create_server():
     try:
         ram = int(body.get("ramMb", 0))
         disk = int(body.get("diskMb", 0))
-        port = int(body.get("port", 25565))
+        port = int(body.get("port", 19132 if software == "bedrock" else 25565))
     except (TypeError, ValueError):
         return response_error("RAM, almacenamiento y puerto deben ser números.")
     if not name or len(name) > 48:
         return response_error("El nombre debe tener entre 1 y 48 caracteres.")
     if software not in SOFTWARE:
         return response_error("Software no admitido.")
+    if software == "bedrock":
+        try:
+            bedrock_platform()
+        except RuntimeError as error:
+            return response_error(str(error), 400)
     if not VERSION_ID_PATTERN.fullmatch(version):
         return response_error("Versión no válida.")
     if build and not BUILD_ID_PATTERN.fullmatch(build):
@@ -815,6 +887,83 @@ def merge_server_installation(staging: Path, server_root: Path) -> None:
             shutil.copytree(source, target, dirs_exist_ok=True)
         else:
             shutil.copy2(source, target)
+
+
+def extract_bedrock_archive(
+    archive_path: Path,
+    destination: Path,
+    current_size: int,
+    disk_limit: int,
+) -> None:
+    root = destination.resolve()
+    with zipfile.ZipFile(archive_path) as archive:
+        entries = archive.infolist()
+        if len(entries) > 10000:
+            raise ValueError("El paquete Bedrock contiene demasiados archivos.")
+        unpacked_size = sum(entry.file_size for entry in entries if not entry.is_dir())
+        if current_size + unpacked_size > disk_limit:
+            raise RuntimeError("La instalación Bedrock superaría el límite de almacenamiento.")
+        extracted_files: set[str] = set()
+        for entry in entries:
+            name = entry.filename
+            relative = PurePosixPath(name)
+            windows_path = PureWindowsPath(name)
+            if (
+                not name
+                or "\\" in name
+                or relative.is_absolute()
+                or windows_path.is_absolute()
+                or windows_path.drive
+                or ".." in relative.parts
+            ):
+                raise ValueError("El paquete Bedrock contiene una ruta no permitida.")
+            target = (destination / Path(*relative.parts)).resolve()
+            if not target.is_relative_to(root):
+                raise ValueError("El paquete Bedrock intenta escribir fuera del servidor.")
+            mode = entry.external_attr >> 16
+            if mode & 0o170000 == 0o120000:
+                raise ValueError("El paquete Bedrock contiene un enlace simbólico.")
+            if entry.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            normalized_target = os.path.normcase(str(target))
+            if normalized_target in extracted_files:
+                raise ValueError("El paquete Bedrock contiene rutas duplicadas.")
+            extracted_files.add(normalized_target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            written = 0
+            with archive.open(entry) as source, target.open("xb") as output:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > entry.file_size:
+                        raise ValueError("Un archivo del paquete Bedrock supera el tamaño anunciado.")
+                    output.write(chunk)
+            if written != entry.file_size:
+                raise ValueError("Un archivo del paquete Bedrock está incompleto.")
+            if sys.platform.startswith("linux") and mode & 0o111:
+                target.chmod((mode & 0o777) | 0o111)
+
+
+def configure_bedrock_server_port(server_root: Path, port: int) -> None:
+    properties = server_root / "server.properties"
+    if not properties.is_file():
+        raise RuntimeError("El paquete Bedrock no contiene server.properties.")
+    values = {"server-port": str(port), "server-portv6": str(port)}
+    lines = properties.read_text(encoding="utf-8-sig").splitlines()
+    written: set[str] = set()
+    for index, line in enumerate(lines):
+        key, separator, _ = line.partition("=")
+        key = key.strip()
+        if separator and key in values:
+            lines[index] = f"{key}={values[key]}"
+            written.add(key)
+    for key, value in values.items():
+        if key not in written:
+            lines.append(f"{key}={value}")
+    properties.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 @app.delete("/api/servers/<server_id>")
@@ -905,6 +1054,9 @@ def software_versions(software: str):
                 ))
             }
             return jsonify({"versions": sorted(versions, key=version_sort_key, reverse=True)})
+        if software == "bedrock":
+            versions = bedrock_server_downloads()
+            return jsonify({"versions": sorted(versions, key=version_sort_key, reverse=True)})
         data = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
         return jsonify({
             "versions": [
@@ -967,6 +1119,8 @@ def software_builds(software: str, version: str):
             })
         if software == "arclight":
             return jsonify({"builds": arclight_builds(version)})
+        if software == "bedrock":
+            return jsonify({"builds": []})
         return jsonify({"builds": []})
     except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError) as error:
         logging.exception("Fallo al consultar builds de %s %s", software, version)
@@ -987,7 +1141,7 @@ def install_server(server_id: str):
     build = str(body.get("build", server["build"]))
     if not VERSION_ID_PATTERN.fullmatch(version):
         return response_error("Versión no válida.")
-    if software != "vanilla" and not BUILD_ID_PATTERN.fullmatch(build):
+    if software not in NO_BUILD_SOFTWARE and not BUILD_ID_PATTERN.fullmatch(build):
         return response_error("Selecciona una build válida antes de instalar.")
     with PROCESS_LOCK:
         process = PROCESSES.get(server_id)
@@ -1102,6 +1256,26 @@ def install_server(server_id: str):
             if not build_data:
                 return response_error("No se encontró esa build de Arclight.", 404)
             official_download(build_data["url"], staging / "server.jar")
+        elif software == "bedrock":
+            _, executable_name = bedrock_platform()
+            download_url = bedrock_server_downloads().get(version)
+            if not download_url:
+                return response_error("La versión Bedrock ya no está disponible en la fuente oficial.", 404)
+            archive_path = staging / "bedrock-server.zip"
+            official_download(download_url, archive_path)
+            extract_bedrock_archive(
+                archive_path,
+                staging,
+                folder_size(root) + folder_size(staging),
+                server["disk_mb"] * 1024 * 1024,
+            )
+            archive_path.unlink()
+            executable = staging / executable_name
+            if not executable.is_file():
+                raise RuntimeError("El paquete oficial no contiene el ejecutable Bedrock esperado.")
+            if sys.platform.startswith("linux"):
+                executable.chmod(executable.stat().st_mode | 0o111)
+            configure_bedrock_server_port(staging, server["port"])
         else:
             manifest = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
             entry = next(item for item in manifest["versions"] if item["id"] == version)
@@ -1109,8 +1283,11 @@ def install_server(server_id: str):
             url = version_data["downloads"]["server"]["url"]
             official_download(url, staging / "server.jar")
 
-        if not (staging / "server.jar").is_file():
-            raise RuntimeError("La instalación no generó el archivo server.jar esperado.")
+        expected_file = (
+            bedrock_platform()[1] if software == "bedrock" else "server.jar"
+        )
+        if not (staging / expected_file).is_file():
+            raise RuntimeError(f"La instalación no generó el archivo {expected_file} esperado.")
         if software == "fabric" and not (staging / "fabric-server-launch.jar").is_file():
             raise RuntimeError("Fabric no generó su launcher de servidor.")
         if folder_size(root) + folder_size(staging) > server["disk_mb"] * 1024 * 1024:
@@ -1123,10 +1300,10 @@ def install_server(server_id: str):
             (software, version, build, server_id),
         )
         db().commit()
-        return jsonify({"ok": True, "file": "server.jar"})
+        return jsonify({"ok": True, "file": expected_file})
     except StopIteration:
         return response_error("No se encontró esa versión oficial de Minecraft.", 404)
-    except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError, zipfile.BadZipFile) as error:
         logging.exception("Fallo al instalar servidor %s", server_id)
         return response_error(f"No se pudo instalar el servidor: {error}", 502)
     finally:
@@ -1483,7 +1660,8 @@ def list_server_ports(server_id: str):
         (server_id,),
     )
     primary = {
-        "id": "primary", "port": server["port"], "protocol": "TCP",
+        "id": "primary", "port": server["port"],
+        "protocol": "UDP" if server["software"] == "bedrock" else "TCP",
         "description": "Puerto principal de Minecraft", "primary": True,
     }
     return jsonify({
@@ -2302,8 +2480,8 @@ def install_plugin(server_id: str):
     server = get_server(server_id)
     if not server:
         return response_error("Servidor no encontrado.", 404)
-    if server["software"] == "vanilla":
-        return response_error("Los plugins requieren Paper, Purpur o Folia.")
+    if server["software"] in {"vanilla", "forge", "neoforge", "fabric", "bedrock"}:
+        return response_error("Este software no admite la instalación de plugins Bukkit.")
     body = json_body()
     url = str(body.get("url", ""))
     file_name = secure_filename(str(body.get("fileName", "")))

@@ -63,13 +63,13 @@ jobs:
         if: matrix.platform == 'linux'
         run: bash -n start.sh
       - name: Build application
-        run: pyinstaller --noconfirm --clean --distpath dist NexoryPanel.spec
+        run: pyinstaller --noconfirm --clean --distpath release-build NexoryPanel.spec
       - name: Package Windows release
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item dist\NexoryPanel.exe release\NexoryPanel.exe
+          Copy-Item release-build\NexoryPanel.exe release\NexoryPanel.exe
           $hash = (Get-FileHash release\NexoryPanel.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  NexoryPanel.exe" | Set-Content -Path release\NexoryPanel.exe.sha256 -Encoding ascii
       - name: Package macOS release
@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           mkdir release
-          ditto -c -k --sequesterRsrc --keepParent dist/NexoryPanel.app release/NexoryPanel-macos.zip
+          ditto -c -k --sequesterRsrc --keepParent release-build/NexoryPanel.app release/NexoryPanel-macos.zip
           printf 'Built for %s\n' "$(uname -m)" > release/NexoryPanel-macos-architecture.txt
           (cd release && shasum -a 256 NexoryPanel-macos.zip > NexoryPanel-macos.zip.sha256)
       - name: Package Linux release
@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release/package
-          install -m 755 dist/NexoryPanel release/package/NexoryPanel
+          install -m 755 release-build/NexoryPanel release/package/NexoryPanel
           cat > release/package/README.txt <<'EOF'
           NexoryPanel for Linux (x86_64)
 
