@@ -19,8 +19,10 @@ import urllib.request
 import uuid
 import zipfile
 import webbrowser
+import xml.etree.ElementTree as ET
 from functools import wraps
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Any
 
 import psutil
@@ -51,11 +53,18 @@ SERVER_DIR = DATA_DIR / "servers"
 DB_PATH = DATA_DIR / "nexory.sqlite3"
 CONFIG_PATH = DATA_DIR / "secret.key"
 SOFTWARE = {
-    "paper": {"name": "Paper", "image": "https://api.papermc.io/v2/projects/paper"},
-    "purpur": {"name": "Purpur", "image": "https://api.purpurmc.org/v2/purpur"},
-    "folia": {"name": "Folia", "image": "https://api.papermc.io/v2/projects/folia"},
-    "vanilla": {"name": "Vanilla", "image": None},
+    "paper": {"name": "PaperMC", "image": "/static/software/paper.svg"},
+    "purpur": {"name": "PurpurMC", "image": "/static/software/purpur.svg"},
+    "folia": {"name": "FoliaMC", "image": "/static/software/folia.svg"},
+    "vanilla": {"name": "Vanilla", "image": "/static/software/vanilla.svg"},
+    "forge": {"name": "Forge", "image": "/static/software/forge.svg"},
+    "neoforge": {"name": "NeoForge", "image": "/static/software/neoforge.svg"},
+    "fabric": {"name": "Fabric", "image": "/static/software/fabric.svg"},
+    "mohist": {"name": "Mohist", "image": "/static/software/mohist.svg"},
+    "arclight": {"name": "Arclight", "image": "/static/software/arclight.svg"},
 }
+VERSION_ID_PATTERN = re.compile(r"[A-Za-z0-9._+-]{1,32}")
+BUILD_ID_PATTERN = re.compile(r"[A-Za-z0-9._+-]{1,128}")
 THEMES = {"Default", "Purple", "Red", "Green", "Blue", "Pterodactyl", "Yellow", "Orange"}
 MAX_EDIT_BYTES = 2 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
@@ -348,6 +357,26 @@ def start_server_process(server: Any) -> tuple[bool, str]:
         return False, "El servidor ya supera su límite de almacenamiento. Libera espacio antes de iniciar."
     if not java:
         return False, "Java no está instalado o no aparece en PATH."
+    launch_arguments = ["-jar", "server.jar", "nogui"]
+    if server["software"] == "fabric":
+        if not (root / "fabric-server-launch.jar").is_file():
+            return False, "Instala primero Fabric desde Versiones."
+        launch_arguments = ["-jar", "fabric-server-launch.jar", "nogui"]
+    elif server["software"] in {"forge", "neoforge"}:
+        argument_file = "win_args.txt" if os.name == "nt" else "unix_args.txt"
+        if server["software"] == "forge":
+            coordinate = f"{server['version']}-{server['build']}"
+            argument_path = (
+                root / "libraries" / "net" / "minecraftforge" / "forge" / coordinate / argument_file
+            )
+        else:
+            coordinate = neoforge_coordinate(server["version"], server["build"])
+            argument_path = (
+                root / "libraries" / "net" / "neoforged" / "neoforge" / coordinate / argument_file
+            )
+        if not argument_path.is_file():
+            return False, f"Instala primero {SOFTWARE[server['software']]['name']} desde Versiones."
+        launch_arguments = [f"@{argument_path.relative_to(root).as_posix()}", "nogui"]
     java_args_text = server_setting(server_id, "java_args", "-Xms256M -Xmx{ram}M")
     try:
         java_args = shlex.split(java_args_text.replace("{ram}", str(server["ram_mb"])))
@@ -361,7 +390,7 @@ def start_server_process(server: Any) -> tuple[bool, str]:
     log_file = (root / "console.log").open("ab")
     try:
         new_process = subprocess.Popen(
-            [java, *java_args, "-jar", "server.jar", "nogui"],
+            [java, *java_args, *launch_arguments],
             cwd=root,
             stdin=subprocess.PIPE,
             stdout=log_file,
@@ -402,10 +431,126 @@ def official_json(url: str) -> Any:
         return json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
 
 
+def official_xml(url: str) -> ET.Element:
+    if urllib.parse.urlparse(url).hostname not in {
+        "maven.minecraftforge.net",
+        "maven.neoforged.net",
+    }:
+        raise ValueError("La consulta XML no pertenece a un repositorio oficial permitido.")
+    request_obj = urllib.request.Request(url, headers={"User-Agent": "NexoryPanel/1.0"})
+    with urllib.request.urlopen(request_obj, timeout=20) as response:
+        if response.status != 200:
+            raise RuntimeError(f"El servidor oficial respondió HTTP {response.status}.")
+        content = response.read(4 * 1024 * 1024 + 1)
+    if len(content) > 4 * 1024 * 1024:
+        raise ValueError("Los metadatos oficiales superan el límite de lectura.")
+    return ET.fromstring(content)
+
+
+def version_sort_key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", version))
+
+
+def minecraft_release_versions() -> set[str]:
+    manifest = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+    return {
+        str(item["id"])
+        for item in manifest.get("versions", [])
+        if item.get("type") == "release" and VERSION_ID_PATTERN.fullmatch(str(item.get("id", "")))
+    }
+
+
+def forge_build_index() -> dict[str, list[str]]:
+    metadata = official_xml(
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"
+    )
+    releases = minecraft_release_versions()
+    builds: dict[str, set[str]] = {}
+    for item in metadata.findall("./versioning/versions/version"):
+        coordinate = item.text or ""
+        minecraft_version, separator, build = coordinate.partition("-")
+        if separator and build and minecraft_version in releases:
+            builds.setdefault(minecraft_version, set()).add(build)
+    return {
+        version: sorted(items, key=version_sort_key, reverse=True)
+        for version, items in builds.items()
+    }
+
+
+def neoforge_version_info() -> dict[str, list[tuple[str, str]]]:
+    metadata = official_xml(
+        "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
+    )
+    releases = minecraft_release_versions()
+    versions: dict[str, set[tuple[str, str]]] = {}
+    for item in metadata.findall("./versioning/versions/version"):
+        coordinate = item.text or ""
+        numeric = coordinate.split("-", 1)[0].split(".")
+        if len(numeric) < 3 or not all(part.isdigit() for part in numeric):
+            continue
+        if numeric[0] in {"20", "21"}:
+            minecraft_version = (
+                f"1.{numeric[0]}" if numeric[1] == "0" else f"1.{numeric[0]}.{numeric[1]}"
+            )
+            prefix = f"{numeric[0]}.{numeric[1]}."
+        elif len(numeric) >= 4:
+            minecraft_version = ".".join(numeric[:3])
+            prefix = f"{minecraft_version}."
+        else:
+            continue
+        if minecraft_version not in releases or not coordinate.startswith(prefix):
+            continue
+        build = coordinate[len(prefix):]
+        if build:
+            versions.setdefault(minecraft_version, set()).add((build, coordinate))
+    return {
+        version: sorted(
+            builds,
+            key=lambda item: version_sort_key(item[1]),
+            reverse=True,
+        )
+        for version, builds in versions.items()
+    }
+
+
+def neoforge_coordinate(minecraft_version: str, build: str) -> str:
+    if minecraft_version.startswith("1."):
+        parts = minecraft_version.split(".")
+        base_version = f"{parts[1]}.{parts[2]}" if len(parts) > 2 else f"{parts[1]}.0"
+    else:
+        base_version = minecraft_version
+    return f"{base_version}.{build}"
+
+
+def arclight_builds(minecraft_version: str | None = None) -> list[dict[str, str]]:
+    releases = official_json("https://api.github.com/repos/IzzelAliz/Arclight/releases?per_page=100")
+    pattern = re.compile(
+        r"^arclight-(?P<loader>fabric|forge|neoforge)-(?P<version>[0-9.]+)-(?P<build>.+)\.jar$"
+    )
+    builds = []
+    for release in releases:
+        for asset in release.get("assets", []):
+            name = str(asset.get("name", ""))
+            match = pattern.fullmatch(name)
+            if not match or (minecraft_version and match.group("version") != minecraft_version):
+                continue
+            url = asset.get("browser_download_url", "")
+            if urllib.parse.urlparse(url).hostname != "github.com":
+                continue
+            builds.append({
+                "id": name,
+                "label": f"{match.group('loader').capitalize()} · {release.get('tag_name', 'Arclight')}",
+                "url": url,
+            })
+    return builds
+
+
 def official_download(url: str, target: Path) -> None:
     allowed_hosts = {
         "api.purpurmc.org", "fill.papermc.io", "fill-data.papermc.io",
-        "piston-data.mojang.com", "cdn.modrinth.com",
+        "piston-data.mojang.com", "cdn.modrinth.com", "meta.fabricmc.net",
+        "maven.minecraftforge.net", "maven.neoforged.net", "api.mohistmc.com",
+        "github.com", "mohistmc.com",
     }
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
@@ -590,9 +735,9 @@ def create_server():
         return response_error("El nombre debe tener entre 1 y 48 caracteres.")
     if software not in SOFTWARE:
         return response_error("Software no admitido.")
-    if not re.fullmatch(r"[A-Za-z0-9._+-]{1,32}", version):
+    if not VERSION_ID_PATTERN.fullmatch(version):
         return response_error("Versión no válida.")
-    if build and not re.fullmatch(r"[0-9]{1,9}", build):
+    if build and not BUILD_ID_PATTERN.fullmatch(build):
         return response_error("Build no válida.")
     if not 512 <= ram <= 131072 or not 1024 <= disk <= 1048576:
         return response_error("RAM (512–131072 MiB) o disco (1024–1048576 MiB) fuera de rango.")
@@ -620,6 +765,56 @@ def create_server():
     (server_root / "eula.txt").write_text("# Acepta el EULA de Minecraft antes de iniciar.\neula=false\n", encoding="utf-8")
     log_activity(server_id, "server.create", name)
     return jsonify({"id": server_id}), 201
+
+
+def run_server_installer(
+    software: str,
+    installer_name: str,
+    install_flag: str,
+    staging: Path,
+    server_root: Path,
+    disk_limit: int,
+) -> None:
+    java = shutil.which("java")
+    if not java:
+        raise RuntimeError("Java no está instalado o no aparece en PATH.")
+    log_path = staging / "nexory-install.log"
+    with log_path.open("wb") as output:
+        process = subprocess.Popen(
+            [java, "-Djava.awt.headless=true", "-jar", installer_name, install_flag],
+            cwd=staging,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
+        deadline = time.monotonic() + 600
+        try:
+            while process.poll() is None:
+                if folder_size(server_root) + folder_size(staging) > disk_limit:
+                    raise RuntimeError("La instalación superó el límite de almacenamiento del servidor.")
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("La instalación superó el tiempo máximo de 10 minutos.")
+                time.sleep(1)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    if process.returncode:
+        output_text = log_path.read_text(encoding="utf-8", errors="replace")[-3000:]
+        raise RuntimeError(f"El instalador de {SOFTWARE[software]['name']} falló: {output_text}")
+
+
+def merge_server_installation(staging: Path, server_root: Path) -> None:
+    for source in staging.rglob("*"):
+        if source.is_symlink():
+            raise RuntimeError("El instalador creó un enlace simbólico; se canceló la instalación.")
+    for source in staging.iterdir():
+        if source.name in {"eula.txt", "nexory-install.log"}:
+            continue
+        target = server_root / source.name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, target)
 
 
 @app.delete("/api/servers/<server_id>")
@@ -676,9 +871,49 @@ def software_versions(software: str):
         if software == "purpur":
             data = official_json("https://api.purpurmc.org/v2/purpur")
             return jsonify({"versions": data.get("versions", [])})
-        manifest = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
-        return jsonify({"versions": [item["id"] for item in manifest.get("versions", []) if item.get("type") == "release"]})
-    except (OSError, ValueError, KeyError, RuntimeError) as error:
+        if software == "forge":
+            versions = forge_build_index()
+            return jsonify({"versions": sorted(versions, key=version_sort_key, reverse=True)})
+        if software == "neoforge":
+            versions = neoforge_version_info()
+            return jsonify({"versions": sorted(versions, key=version_sort_key, reverse=True)})
+        if software == "fabric":
+            data = official_json("https://meta.fabricmc.net/v2/versions/game")
+            return jsonify({
+                "versions": [
+                    item["version"]
+                    for item in data
+                    if item.get("stable") and VERSION_ID_PATTERN.fullmatch(str(item.get("version", "")))
+                ]
+            })
+        if software == "mohist":
+            data = official_json("https://api.mohistmc.com/project/mohist/versions")
+            return jsonify({
+                "versions": [
+                    item["name"]
+                    for item in data
+                    if isinstance(item, dict) and VERSION_ID_PATTERN.fullmatch(str(item.get("name", "")))
+                ]
+            })
+        if software == "arclight":
+            versions = {
+                match.group("version")
+                for item in arclight_builds()
+                if (match := re.fullmatch(
+                    r"arclight-(?:fabric|forge|neoforge)-(?P<version>[0-9.]+)-.+\.jar",
+                    item["id"],
+                ))
+            }
+            return jsonify({"versions": sorted(versions, key=version_sort_key, reverse=True)})
+        data = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+        return jsonify({
+            "versions": [
+                item["id"]
+                for item in data.get("versions", [])
+                if item.get("type") == "release"
+            ]
+        })
+    except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError) as error:
         logging.exception("Fallo al consultar versiones de %s", software)
         return response_error(f"No se pudo consultar la API oficial: {error}", 502)
 
@@ -686,19 +921,54 @@ def software_versions(software: str):
 @app.get("/api/software/<software>/versions/<version>/builds")
 @login_required()
 def software_builds(software: str, version: str):
-    if software not in {"paper", "folia", "purpur"}:
-        return jsonify({"builds": []})
-    if not re.fullmatch(r"[A-Za-z0-9._+-]{1,32}", version):
+    if software not in SOFTWARE:
+        return response_error("Software no admitido.")
+    if not VERSION_ID_PATTERN.fullmatch(version):
         return response_error("Versión no válida.")
     try:
         if software == "purpur":
             data = official_json(f"https://api.purpurmc.org/v2/purpur/{urllib.parse.quote(version, safe='')}")
-            builds = data.get("builds", {}).get("all", [])
-        else:
+            builds = list(reversed(data.get("builds", {}).get("all", [])))
+            return jsonify({"builds": builds})
+        if software in {"paper", "folia"}:
             data = official_json(f"https://fill.papermc.io/v3/projects/{software}/versions/{urllib.parse.quote(version, safe='')}/builds")
             builds = data.get("builds", []) if isinstance(data, dict) else data
-        return jsonify({"builds": builds})
-    except (OSError, ValueError, KeyError, RuntimeError) as error:
+            return jsonify({"builds": builds})
+        if software == "forge":
+            return jsonify({"builds": forge_build_index().get(version, [])})
+        if software == "neoforge":
+            builds = [
+                {"id": build, "label": coordinate}
+                for build, coordinate in neoforge_version_info().get(version, [])
+            ]
+            return jsonify({"builds": builds})
+        if software == "fabric":
+            data = official_json(
+                f"https://meta.fabricmc.net/v2/versions/loader/{urllib.parse.quote(version, safe='')}"
+            )
+            return jsonify({
+                "builds": [
+                    {"id": item["loader"]["version"], "label": f"Loader {item['loader']['version']}"}
+                    for item in data
+                    if item.get("loader", {}).get("stable")
+                    and BUILD_ID_PATTERN.fullmatch(str(item.get("loader", {}).get("version", "")))
+                ]
+            })
+        if software == "mohist":
+            data = official_json(
+                f"https://api.mohistmc.com/project/mohist/{urllib.parse.quote(version, safe='')}/builds"
+            )
+            return jsonify({
+                "builds": [
+                    {"id": str(item["id"]), "label": f"Build {item['id']}"}
+                    for item in data
+                    if isinstance(item, dict) and str(item.get("id", "")).isdigit()
+                ]
+            })
+        if software == "arclight":
+            return jsonify({"builds": arclight_builds(version)})
+        return jsonify({"builds": []})
+    except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError) as error:
         logging.exception("Fallo al consultar builds de %s %s", software, version)
         return response_error(f"No se pudieron consultar las builds: {error}", 502)
 
@@ -715,14 +985,22 @@ def install_server(server_id: str):
         return response_error("Software no admitido.")
     version = str(body.get("version", server["version"]))
     build = str(body.get("build", server["build"]))
+    if not VERSION_ID_PATTERN.fullmatch(version):
+        return response_error("Versión no válida.")
+    if software != "vanilla" and not BUILD_ID_PATTERN.fullmatch(build):
+        return response_error("Selecciona una build válida antes de instalar.")
+    with PROCESS_LOCK:
+        process = PROCESSES.get(server_id)
+    if process and process.poll() is None:
+        return response_error("Detén el servidor antes de cambiar su software o versión.", 409)
     root = to_server_path(server_id)
-    jar = root / "server.jar"
+    SERVER_DIR.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=f"nexory-install-{server_id}-", dir=SERVER_DIR))
     try:
         if software == "purpur":
             url = f"https://api.purpurmc.org/v2/purpur/{urllib.parse.quote(version, safe='')}/{urllib.parse.quote(build, safe='')}/download"
+            official_download(url, staging / "server.jar")
         elif software in {"paper", "folia"}:
-            if not build:
-                return response_error("Selecciona una build antes de instalar.")
             build_data = official_json(
                 f"https://fill.papermc.io/v3/projects/{software}/versions/{urllib.parse.quote(version, safe='')}/builds"
             )
@@ -740,19 +1018,106 @@ def install_server(server_id: str):
             url = server_download.get("url") or server_download.get("downloadUrl")
             if not url:
                 return response_error("La API oficial no proporcionó un enlace de descarga.")
+            official_download(url, staging / "server.jar")
+        elif software == "forge":
+            if build not in forge_build_index().get(version, []):
+                return response_error("No se encontró esa build de Forge en el repositorio oficial.", 404)
+            coordinate = f"{version}-{build}"
+            installer_name = f"forge-{coordinate}-installer.jar"
+            url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{coordinate}/{installer_name}"
+            official_download(url, staging / installer_name)
+            run_server_installer(
+                software, installer_name, "--installServer", staging, root,
+                server["disk_mb"] * 1024 * 1024,
+            )
+            (staging / installer_name).unlink()
+            argument_file = "win_args.txt" if os.name == "nt" else "unix_args.txt"
+            if not (
+                staging / "libraries" / "net" / "minecraftforge" / "forge"
+                / coordinate / argument_file
+            ).is_file():
+                raise RuntimeError("Forge terminó sin generar sus argumentos de inicio.")
+        elif software == "neoforge":
+            available_builds = dict(neoforge_version_info().get(version, []))
+            coordinate = available_builds.get(build)
+            if not coordinate:
+                return response_error("No se encontró esa build de NeoForge en el repositorio oficial.", 404)
+            installer_name = f"neoforge-{coordinate}-installer.jar"
+            url = (
+                f"https://maven.neoforged.net/releases/net/neoforged/neoforge/"
+                f"{coordinate}/{installer_name}"
+            )
+            official_download(url, staging / installer_name)
+            run_server_installer(
+                software, installer_name, "--install-server", staging, root,
+                server["disk_mb"] * 1024 * 1024,
+            )
+            (staging / installer_name).unlink()
+            argument_file = "win_args.txt" if os.name == "nt" else "unix_args.txt"
+            if not (
+                staging / "libraries" / "net" / "neoforged" / "neoforge"
+                / coordinate / argument_file
+            ).is_file():
+                raise RuntimeError("NeoForge terminó sin generar sus argumentos de inicio.")
+        elif software == "fabric":
+            loaders = official_json(
+                f"https://meta.fabricmc.net/v2/versions/loader/{urllib.parse.quote(version, safe='')}"
+            )
+            if not any(
+                item.get("loader", {}).get("version") == build and item.get("loader", {}).get("stable")
+                for item in loaders
+            ):
+                return response_error("No se encontró esa build estable de Fabric.", 404)
+            installers = official_json("https://meta.fabricmc.net/v2/versions/installer")
+            installer_version = next(
+                item["version"] for item in installers if item.get("stable")
+            )
+            fabric_url = (
+                f"https://meta.fabricmc.net/v2/versions/loader/"
+                f"{urllib.parse.quote(version, safe='')}/{urllib.parse.quote(build, safe='')}/"
+                f"{urllib.parse.quote(installer_version, safe='')}/server/jar"
+            )
+            official_download(fabric_url, staging / "fabric-server-launch.jar")
+            manifest = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+            entry = next(item for item in manifest["versions"] if item["id"] == version)
+            version_data = official_json(entry["url"])
+            url = version_data["downloads"]["server"]["url"]
+            official_download(url, staging / "server.jar")
+        elif software == "mohist":
+            builds = official_json(
+                f"https://api.mohistmc.com/project/mohist/{urllib.parse.quote(version, safe='')}/builds"
+            )
+            if not any(str(item.get("id", "")) == build for item in builds if isinstance(item, dict)):
+                return response_error("No se encontró esa build de Mohist.", 404)
+            url = (
+                f"https://api.mohistmc.com/project/mohist/{urllib.parse.quote(version, safe='')}"
+                f"/builds/{urllib.parse.quote(build, safe='')}/download"
+            )
+            official_download(url, staging / "server.jar")
+        elif software == "arclight":
+            build_data = next(
+                (item for item in arclight_builds(version) if item["id"] == build),
+                None,
+            )
+            if not build_data:
+                return response_error("No se encontró esa build de Arclight.", 404)
+            official_download(build_data["url"], staging / "server.jar")
         else:
             manifest = official_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
             entry = next(item for item in manifest["versions"] if item["id"] == version)
             version_data = official_json(entry["url"])
             url = version_data["downloads"]["server"]["url"]
-        allowed = {
-            "api.purpurmc.org", "fill.papermc.io", "fill-data.papermc.io",
-            "piston-data.mojang.com",
-        }
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme != "https" or parsed.hostname not in allowed:
-            raise ValueError("El enlace no coincide con los dominios oficiales.")
-        official_download(url, jar)
+            official_download(url, staging / "server.jar")
+
+        if not (staging / "server.jar").is_file():
+            raise RuntimeError("La instalación no generó el archivo server.jar esperado.")
+        if software == "fabric" and not (staging / "fabric-server-launch.jar").is_file():
+            raise RuntimeError("Fabric no generó su launcher de servidor.")
+        if folder_size(root) + folder_size(staging) > server["disk_mb"] * 1024 * 1024:
+            raise RuntimeError("La instalación superaría el límite de almacenamiento del servidor.")
+        merge_server_installation(staging, root)
+        if folder_size(root) > server["disk_mb"] * 1024 * 1024:
+            raise RuntimeError("La instalación superó el límite de almacenamiento del servidor.")
         db().execute(
             "UPDATE servers SET software = ?, version = ?, build = ? WHERE id = ?",
             (software, version, build, server_id),
@@ -761,9 +1126,12 @@ def install_server(server_id: str):
         return jsonify({"ok": True, "file": "server.jar"})
     except StopIteration:
         return response_error("No se encontró esa versión oficial de Minecraft.", 404)
-    except (OSError, ValueError, KeyError, RuntimeError) as error:
+    except (OSError, ValueError, KeyError, RuntimeError, ET.ParseError) as error:
         logging.exception("Fallo al instalar servidor %s", server_id)
         return response_error(f"No se pudo instalar el servidor: {error}", 502)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
 
 
 @app.post("/api/servers/<server_id>/power/<action>")

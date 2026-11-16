@@ -29,11 +29,11 @@ La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`,
 - Registro/inicio de sesión local, contraseñas con hash y primera cuenta administradora.
 - Panel de usuario y administración; asignación de servidores, usuarios, RAM, almacenamiento y puerto.
 - Cuotas de asignación por nodo y servidor. Se verifican las operaciones de archivos y el proceso Java se detiene si el almacenamiento administrado excede su cuota. La memoria máxima de Java se configura con `-Xmx`, sin un límite duro de memoria para el proceso.
-- Tipos Paper, Purpur, Vanilla y Folia. Lista versiones/builds mediante APIs oficiales y descarga el JAR desde dominios oficiales permitidos.
+- Tipos Paper, Purpur, Vanilla, Folia, Forge, NeoForge, Fabric, Mohist y Arclight. Consulta versiones/builds disponibles y descarga o ejecuta los instaladores oficiales.
 - Al administrar un servidor, navegación contextual para Dashboard, Consola, Archivos, Versiones y Plugins; el selector de software muestra nombres claros y las versiones/builds disponibles.
 - Consola local de proceso, estadísticas aproximadas de CPU/RAM y explorador de archivos con búsqueda, renombrado, carpetas, archivos, subida, ZIP y extracción ZIP segura contra rutas fuera del servidor.
 - Editor UTF-8 (máximo 2 MiB) con números de línea, resaltado básico para YAML/Properties/JSON, guardado con Ctrl+S y pestaña para el archivo abierto.
-- Búsqueda e instalación de plugins de Modrinth para Paper/Purpur/Folia.
+- Búsqueda e instalación de plugins de Modrinth para software compatible con plugins Bukkit; los mod loaders Forge, NeoForge y Fabric muestran su uso de mods en lugar de plugins.
 - Generador de plantilla Maven para plugins Bukkit/Paper con `plugin.yml`, clase Java principal y archivo `pom.xml`.
 - Tema del panel configurable (paletas, color personalizado y estilos de botones Gradient/Solid/Outline/Glass), junto con Enable Register, límites y nombre del nodo.
 - API key opcional para `GET /api/dashboard`; las claves solo se muestran una vez y se almacenan como hash.
@@ -47,6 +47,11 @@ La landing está en `docs\` y se publica con GitHub Pages. Al crear un tag `v*`,
 
 - Purpur expone su API y OpenAPI en <https://api.purpurmc.org/openapi>. El panel consulta `/v2/purpur`, `/v2/purpur/{version}` y descarga `/v2/purpur/{version}/{build}/download`.
 - PaperMC publica Paper y Folia en <https://papermc.io/downloads> y Folia en <https://papermc.io/downloads/folia>. El panel usa los endpoints v3 de `https://fill.papermc.io/v3/projects/{paper|folia}/versions` y sus endpoints de builds/descargas.
+- Forge publica su metadata Maven en <https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml>; el instalador oficial prepara el servidor y sus argumentos de inicio.
+- NeoForge publica sus versiones en <https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml>; el panel ejecuta su instalador oficial para preparar el servidor.
+- Fabric usa la API Meta en <https://meta.fabricmc.net/> para seleccionar versiones de Minecraft y loader, y descargar el launcher de servidor.
+- Mohist ofrece sus versiones/builds en <https://api.mohistmc.com/project/mohist/versions> y el JAR de cada build desde su API oficial.
+- Arclight usa los assets JAR de sus versiones publicadas en <https://github.com/IzzelAliz/Arclight/releases>.
 - El manifiesto de versiones Vanilla es <https://piston-meta.mojang.com/mc/game/version_manifest_v2.json>; el JAR se obtiene del campo `downloads.server.url` de los metadatos de esa versión.
 - El marketplace se obtiene de la API de Modrinth: <https://docs.modrinth.com/api/operations/searchProjects/> y <https://docs.modrinth.com/api/operations/getProjectVersions/>.
 

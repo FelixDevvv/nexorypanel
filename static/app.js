@@ -17,6 +17,18 @@ const state = {
   settings: null,
 };
 
+const SOFTWARE_OPTIONS = [
+  { id: 'paper', name: 'PaperMC', image: 'paper.svg' },
+  { id: 'purpur', name: 'PurpurMC', image: 'purpur.svg' },
+  { id: 'vanilla', name: 'Vanilla', image: 'vanilla.svg' },
+  { id: 'folia', name: 'FoliaMC', image: 'folia.svg' },
+  { id: 'forge', name: 'Forge', image: 'forge.svg' },
+  { id: 'neoforge', name: 'NeoForge', image: 'neoforge.svg' },
+  { id: 'fabric', name: 'Fabric', image: 'fabric.svg' },
+  { id: 'mohist', name: 'Mohist', image: 'mohist.svg' },
+  { id: 'arclight', name: 'Arclight', image: 'arclight.svg' },
+];
+
 const icons = {
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   servers: '<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>',
@@ -56,6 +68,21 @@ const icons = {
 
 function icon(name, size = 18) {
   return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || ''}</svg>`;
+}
+
+function softwareInfo(id) {
+  return SOFTWARE_OPTIONS.find(software => software.id === id) || { name: id, image: 'vanilla.svg' };
+}
+
+function softwareImage(id, className = 'software-choice-image') {
+  const software = softwareInfo(id);
+  return `<img class="${className}" src="/static/software/${software.image}" alt="">`;
+}
+
+function softwareChoiceButtons(selected, attribute) {
+  return SOFTWARE_OPTIONS.map(software => `<button type="button" class="software-choice ${software.id === selected ? 'active' : ''}" ${attribute}="${software.id}" aria-pressed="${software.id === selected}">
+    ${softwareImage(software.id)}<span>${software.name}</span>
+  </button>`).join('');
 }
 
 function esc(value) {
@@ -335,17 +362,14 @@ async function renderPage() {
 
 function serverCard(server) {
   const status = server.status === 'online' ? 'online' : server.status === 'starting' ? 'starting' : '';
+  const software = softwareInfo(server.software);
   return `<article class="card server-card">
-    <div class="server-banner"><div class="server-software">${server.icon ? `<img class="software-mark server-custom-icon" src="${esc(server.icon)}" alt="">` : `<span class="software-mark">${softwareLetter(server.software)}</span>`}<div><h3>${esc(server.name)}</h3><p>${esc(server.software)} · ${esc(server.version)}${server.build ? ` · build ${esc(server.build)}` : ''}</p>${server.description ? `<p>${esc(server.description)}</p>` : ''}</div></div></div>
+    <div class="server-banner"><div class="server-software">${server.icon ? `<img class="software-mark server-custom-icon" src="${esc(server.icon)}" alt="">` : softwareImage(server.software, 'software-mark')}<div><h3>${esc(server.name)}</h3><p>${esc(software.name)} · ${esc(server.version)}${server.build ? ` · build ${esc(server.build)}` : ''}</p>${server.description ? `<p>${esc(server.description)}</p>` : ''}</div></div></div>
     <div class="server-body">
       <div class="server-meta"><span>IP <strong>127.0.0.1:${server.port}</strong></span><span>CPU <strong>${Number(server.cpu || 0).toFixed(1)}%</strong></span><span>RAM <strong>${server.memory || 0} / ${server.ram_mb} MiB</strong></span><span>Disco <strong>${server.diskUsed} / ${server.disk_mb} MiB</strong></span>${server.owner_name ? `<span>Usuario <strong>${esc(server.owner_name)}</strong></span>` : ''}</div>
       <div class="server-actions"><span class="status ${status}">${server.status === 'online' ? 'En línea' : server.status === 'starting' ? 'Iniciando' : 'Apagado'}</span><div class="row"><button class="btn btn-primary" data-server="${esc(server.id)}">Administrar →</button>${state.user.role === 'admin' ? `<button class="btn btn-danger" data-delete-server="${esc(server.id)}" title="Eliminar servidor">×</button>` : ''}</div></div>
     </div>
   </article>`;
-}
-
-function softwareLetter(software) {
-  return ({ paper: 'P', purpur: 'Pu', folia: 'F', vanilla: 'M' })[software] || 'M';
 }
 
 function versionId(item) {
@@ -930,27 +954,29 @@ async function uploadFiles(fileList, preserveFolder = false) {
 
 async function renderVersions() {
   const box = document.getElementById('server-tab-content');
-  const softwareNames = { paper: 'PaperMC', purpur: 'PurpurMC', vanilla: 'Vanilla', folia: 'FoliaMC' };
   let selectedSoftware = state.server.software;
   box.innerHTML = `
-    <div class="software-switcher" role="group" aria-label="Tipo de software">${Object.entries(softwareNames).map(([type, name]) => `<button class="software-choice ${type === selectedSoftware ? 'active' : ''}" data-software="${type}">${name}</button>`).join('')}</div>
+    <div class="software-switcher" role="group" aria-label="Tipo de software">${softwareChoiceButtons(selectedSoftware, 'data-software')}</div>
     <div class="card version-card">
-      <div class="section-title"><div><h2 id="selected-software-name">${softwareNames[selectedSoftware]}</h2><p>Elige la versión y build que quieres instalar en este servidor.</p></div><span class="badge">Fuente oficial</span></div>
+      <div class="section-title"><div><h2 id="selected-software-name">${softwareInfo(selectedSoftware).name}</h2><p>Elige la versión y build disponibles para instalar en este servidor.</p></div><span class="badge">Fuente oficial</span></div>
       <div class="form-grid">
         <label class="field">Versión<select id="install-version" class="select"><option value="">Cargando versiones oficiales…</option></select></label>
         <label class="field" id="build-field">Build<select id="install-build" class="select"><option value="">Selecciona una versión</option></select></label>
       </div>
       <div id="version-note" class="version-note"></div>
-      <div class="row between wrap mt"><span class="muted tiny">La instalación reemplaza server.jar; otros archivos se conservan.</span><button id="install-server" class="btn btn-primary">${icon('download', 15)} Instalar software</button></div>
+      <div class="row between wrap mt"><span id="software-install-note" class="muted tiny"></span><button id="install-server" class="btn btn-primary">${icon('download', 15)} Instalar software</button></div>
     </div>`;
   const versionSelect = document.getElementById('install-version');
   const buildSelect = document.getElementById('install-build');
   const buildField = document.getElementById('build-field');
   const versionNote = document.getElementById('version-note');
-  document.querySelectorAll('[data-software]').forEach(button => button.addEventListener('click', async () => {
+  box.querySelectorAll('[data-software]').forEach(button => button.addEventListener('click', async () => {
     selectedSoftware = button.dataset.software;
-    document.querySelectorAll('[data-software]').forEach(option => option.classList.toggle('active', option === button));
-    document.getElementById('selected-software-name').textContent = softwareNames[selectedSoftware];
+    box.querySelectorAll('[data-software]').forEach(option => {
+      option.classList.toggle('active', option === button);
+      option.setAttribute('aria-pressed', String(option === button));
+    });
+    document.getElementById('selected-software-name').textContent = softwareInfo(selectedSoftware).name;
     await loadVersions();
   }));
   async function loadVersions() {
@@ -958,6 +984,11 @@ async function renderVersions() {
     buildSelect.innerHTML = '<option value="">Selecciona una versión</option>';
     buildField.style.display = selectedSoftware === 'vanilla' ? 'none' : '';
     versionNote.textContent = selectedSoftware === 'vanilla' ? 'Vanilla no utiliza números de build.' : 'Las builds disponibles dependen de la versión seleccionada.';
+    document.getElementById('software-install-note').textContent = ['forge', 'neoforge'].includes(selectedSoftware)
+      ? 'Ejecuta el instalador oficial y prepara sus archivos de inicio; conserva los demás archivos del servidor.'
+      : selectedSoftware === 'fabric'
+        ? 'Instala el launcher Fabric y el JAR vanilla requerido; conserva los demás archivos.'
+        : 'Reemplaza server.jar; los demás archivos del servidor se conservan.';
     try {
       const data = await api(`/api/software/${selectedSoftware}/versions`);
       const versions = data.versions || [];
@@ -981,11 +1012,11 @@ async function renderVersions() {
     buildSelect.innerHTML = '<option value="">Cargando builds…</option>';
     try {
       const data = await api(`/api/software/${selectedSoftware}/versions/${encodeURIComponent(version)}/builds`);
-      let builds = data.builds || [];
-      if (selectedSoftware === 'purpur') builds = builds.slice().reverse();
+      const builds = data.builds || [];
       buildSelect.innerHTML = builds.map(build => {
         const id = typeof build === 'string' || typeof build === 'number' ? String(build) : String(build.id || build.build || '');
-        return id ? `<option value="${esc(id)}" ${id === String(state.server.build) ? 'selected' : ''}>${esc(id)}</option>` : '';
+        const label = typeof build === 'object' && build.label ? String(build.label) : id;
+        return id ? `<option value="${esc(id)}" ${id === String(state.server.build) ? 'selected' : ''}>${esc(label)}</option>` : '';
       }).join('') || '<option value="">No hay builds disponibles</option>';
     } catch (error) { buildSelect.innerHTML = `<option value="">${esc(error.message)}</option>`; }
   }
@@ -997,7 +1028,7 @@ async function renderVersions() {
     const version = versionSelect.value;
     if (!version) return toast('Selecciona una versión.', true);
     if (selectedSoftware !== 'vanilla' && !buildSelect.value) return toast('Selecciona una build antes de instalar.', true);
-    if (!confirm(`¿Descargar ${softwareNames[selectedSoftware]} ${version}${buildSelect.value ? ` build ${buildSelect.value}` : ''} y reemplazar server.jar?`)) return;
+    if (!confirm(`¿Instalar ${softwareInfo(selectedSoftware).name} ${version}${buildSelect.value ? ` (build ${buildSelect.options[buildSelect.selectedIndex].text})` : ''}? Detén el servidor antes de continuar.`)) return;
     const button = document.getElementById('install-server');
     button.disabled = true;
     button.innerHTML = `${icon('download', 15)} Descargando…`;
@@ -1020,9 +1051,9 @@ async function renderPlugins() {
   const box = document.getElementById('server-tab-content');
   box.innerHTML = `<div class="card mb"><div class="section-title"><div><h2>Marketplace de plugins</h2><p>Busca proyectos de Modrinth compatibles con servidores Java.</p></div><div class="row wrap"><span class="badge">Modrinth</span><button id="create-plugin-template" class="btn">＋ Crear plugin Java</button></div></div><form id="plugin-search" class="row"><input class="input" name="query" placeholder="Buscar EssentialsX, LuckPerms…" required><button class="btn btn-primary">Buscar</button></form><div class="notice">Verifica el autor y los permisos del plugin antes de instalarlo. El archivo se guarda en la carpeta plugins/ del servidor.</div></div><div id="plugin-results" class="grid plugin-grid"></div>`;
   document.getElementById('create-plugin-template').addEventListener('click', openPluginTemplate);
-  if (state.server.software === 'vanilla') {
+  if (['vanilla', 'forge', 'neoforge', 'fabric'].includes(state.server.software)) {
     document.getElementById('plugin-search').remove();
-    document.getElementById('plugin-results').innerHTML = '<div class="card empty"><strong>Marketplace no disponible</strong><span>Instala un servidor Paper, Purpur o Folia para usar plugins. El generador Java sigue disponible.</span></div>';
+    document.getElementById('plugin-results').innerHTML = '<div class="card empty"><strong>Marketplace de plugins no disponible</strong><span>Este software usa mods en lugar de plugins Bukkit. El generador Java sigue disponible.</span></div>';
     return;
   }
   document.getElementById('plugin-search').addEventListener('submit', async event => {
@@ -1290,7 +1321,7 @@ async function openCreateServer() {
         <div class="form-grid">
           <label class="field">Nombre<input class="input" name="name" required maxlength="48" placeholder="Survival"></label>
           <label class="field">Usuario<select class="select" name="ownerId" required>${users.map(user => `<option value="${esc(user.id)}">${esc(user.username)}</option>`).join('')}</select></label>
-          <label class="field">Software<select class="select" id="create-software" name="software">${[['paper','PaperMC'],['purpur','PurpurMC'],['vanilla','Minecraft normal'],['folia','FoliaMC']].map(([value,label]) => `<option value="${value}">${label}</option>`).join('')}</select></label>
+          <div class="field software-field"><span>Software</span><div id="create-software-choices" class="software-switcher" role="group" aria-label="Tipo de software">${softwareChoiceButtons('paper', 'data-create-software')}</div><input type="hidden" id="create-software" name="software" value="paper"></div>
           <label class="field">Versión<select class="select" id="create-version" name="version"><option value="">Cargando versiones…</option></select></label>
           <label class="field" id="create-build-wrap">Build<select class="select" id="create-build" name="build"><option value="">Selecciona versión</option></select></label>
           <label class="field">RAM (MiB)<input class="input" type="number" name="ramMb" value="2048" min="512" max="131072" required></label>
@@ -1306,15 +1337,19 @@ async function openCreateServer() {
     async function loadBuilds() {
       const software = softwareSelect.value;
       buildWrap.style.display = software === 'vanilla' ? 'none' : '';
-      if (software === 'vanilla' || !versionSelect.value) return;
+      if (software === 'vanilla') {
+        buildSelect.innerHTML = '<option value="">No aplica</option>';
+        return;
+      }
+      if (!versionSelect.value) return;
       buildSelect.innerHTML = '<option>Cargando…</option>';
       try {
         const data = await api(`/api/software/${software}/versions/${encodeURIComponent(versionSelect.value)}/builds`);
-        let builds = data.builds || [];
-        if (software === 'purpur') builds = builds.slice().reverse();
+        const builds = data.builds || [];
         buildSelect.innerHTML = builds.map(item => {
           const value = String(typeof item === 'object' ? item.id || item.build || '' : item);
-          return value ? `<option value="${esc(value)}">${esc(value)}</option>` : '';
+          const label = typeof item === 'object' && item.label ? String(item.label) : value;
+          return value ? `<option value="${esc(value)}">${esc(label)}</option>` : '';
         }).join('') || '<option value="">No hay builds</option>';
       } catch (error) {
         buildSelect.innerHTML = `<option value="">${esc(error.message)}</option>`;
@@ -1334,7 +1369,14 @@ async function openCreateServer() {
         toast(error.message, true);
       }
     }
-    softwareSelect.addEventListener('change', loadVersions);
+    document.querySelectorAll('#create-software-choices [data-create-software]').forEach(button => button.addEventListener('click', () => {
+      softwareSelect.value = button.dataset.createSoftware;
+      document.querySelectorAll('#create-software-choices [data-create-software]').forEach(option => {
+        option.classList.toggle('active', option === button);
+        option.setAttribute('aria-pressed', String(option === button));
+      });
+      loadVersions();
+    }));
     versionSelect.addEventListener('change', loadBuilds);
     await loadVersions();
     document.getElementById('create-server-form').addEventListener('submit', async event => {

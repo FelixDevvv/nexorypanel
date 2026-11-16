@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 TEMP_STORAGE = tempfile.TemporaryDirectory(prefix="nexory-tests-")
@@ -119,7 +120,11 @@ class PanelTests(unittest.TestCase):
                     }
                 ]
             },
-        ), patch.object(panel, "official_download") as download:
+        ), patch.object(
+            panel,
+            "official_download",
+            side_effect=lambda _url, target: target.write_bytes(b"test server jar"),
+        ) as download:
             install = self.post(f"/api/servers/{server_id}/install", {})
         self.assertEqual(install.status_code, 200)
         self.assertEqual(download.call_args.args[0], "https://fill-data.papermc.io/v1/objects/test/paper.jar")
@@ -184,6 +189,139 @@ class PanelTests(unittest.TestCase):
         )
         self.assertEqual(dashboard.status_code, 200)
         self.assertEqual(dashboard.get_json()[0]["id"], server_id)
+
+    def test_modded_software_installations_use_staged_artifacts(self):
+        registration = self.post(
+            "/api/register", {"username": "root_user", "password": "secure-password-1"}
+        )
+        self.csrf = registration.get_json()["csrfToken"]
+        server = self.post(
+            "/api/servers",
+            {"name": "Modded", "ownerId": registration.get_json()["user"]["id"],
+             "software": "paper", "version": "1.21.1", "build": "1",
+             "ramMb": 2048, "diskMb": 10240, "port": 25565},
+        )
+        server_id = server.get_json()["id"]
+
+        def fake_json(url):
+            if "/versions/loader/1.21.1" in url:
+                return [{"loader": {"version": "0.16.0", "stable": True}}]
+            if url.endswith("/versions/installer"):
+                return [{"version": "1.0.1", "stable": True}]
+            if "version_manifest_v2.json" in url:
+                return {"versions": [{"id": "1.21.1", "url": "https://piston-meta.mojang.com/version.json"}]}
+            if url.endswith("/version.json"):
+                return {"downloads": {"server": {"url": "https://piston-data.mojang.com/server.jar"}}}
+            if url.endswith("/builds"):
+                return [{"id": 100}]
+            self.fail(f"Unexpected official API URL: {url}")
+
+        def fake_installer(software, _name, _flag, staging, _server_root, _disk_limit):
+            (staging / "server.jar").write_bytes(b"installed server")
+            if software == "forge":
+                coordinate = "1.21.1-52.0.1"
+                path = Path("libraries/net/minecraftforge/forge") / coordinate
+            else:
+                coordinate = "21.1.266"
+                path = Path("libraries/net/neoforged/neoforge") / coordinate
+            argument_path = staging / path / (
+                "win_args.txt" if panel.os.name == "nt" else "unix_args.txt"
+            )
+            argument_path.parent.mkdir(parents=True, exist_ok=True)
+            argument_path.write_text("--gameDir .\n", encoding="utf-8")
+
+        software_builds = [
+            ("forge", "52.0.1"),
+            ("neoforge", "266"),
+            ("fabric", "0.16.0"),
+            ("mohist", "100"),
+            ("arclight", "arclight-forge-1.21.1-1.0.0.jar"),
+        ]
+        with patch.object(
+            panel, "forge_build_index", return_value={"1.21.1": ["52.0.1"]}
+        ), patch.object(
+            panel,
+            "neoforge_version_info",
+            return_value={"1.21.1": [("266", "21.1.266")]},
+        ), patch.object(
+            panel,
+            "arclight_builds",
+            return_value=[{
+                "id": "arclight-forge-1.21.1-1.0.0.jar",
+                "label": "Forge · Arclight",
+                "url": "https://github.com/IzzelAliz/Arclight/releases/download/test/server.jar",
+            }],
+        ), patch.object(
+            panel, "official_json", side_effect=fake_json
+        ), patch.object(
+            panel,
+            "official_download",
+            side_effect=lambda _url, target: target.write_bytes(b"downloaded artifact"),
+        ), patch.object(panel, "run_server_installer", side_effect=fake_installer):
+            for software, build in software_builds:
+                with self.subTest(software=software):
+                    response = self.post(
+                        f"/api/servers/{server_id}/install",
+                        {"software": software, "version": "1.21.1", "build": build},
+                    )
+                    self.assertEqual(response.status_code, 200, response.get_json())
+                    self.assertTrue((panel.SERVER_DIR / server_id / "server.jar").is_file())
+                    if software == "fabric":
+                        self.assertTrue(
+                            (panel.SERVER_DIR / server_id / "fabric-server-launch.jar").is_file()
+                        )
+
+    def test_modded_software_version_and_build_lists(self):
+        registration = self.post(
+            "/api/register", {"username": "root_user", "password": "secure-password-1"}
+        )
+        self.csrf = registration.get_json()["csrfToken"]
+
+        def fake_json(url):
+            if url.endswith("/v2/versions/game"):
+                return [{"version": "1.21.1", "stable": True}]
+            if url.endswith("/v2/versions/loader/1.21.1"):
+                return [{"loader": {"version": "0.16.0", "stable": True}}]
+            if url.endswith("/project/mohist/versions"):
+                return [{"name": "1.21.1"}]
+            if url.endswith("/project/mohist/1.21.1/builds"):
+                return [{"id": 100}]
+            self.fail(f"Unexpected official API URL: {url}")
+
+        with patch.object(
+            panel, "forge_build_index", return_value={"1.21.1": ["52.0.1"]}
+        ), patch.object(
+            panel,
+            "neoforge_version_info",
+            return_value={"1.21.1": [("266", "21.1.266")]},
+        ), patch.object(
+            panel,
+            "arclight_builds",
+            return_value=[{
+                "id": "arclight-forge-1.21.1-1.0.0.jar",
+                "label": "Forge · Arclight",
+                "url": "https://github.com/IzzelAliz/Arclight/releases/download/test/server.jar",
+            }],
+        ), patch.object(panel, "official_json", side_effect=fake_json):
+            expected_builds = {
+                "forge": ["52.0.1"],
+                "neoforge": [{"id": "266", "label": "21.1.266"}],
+                "fabric": [{"id": "0.16.0", "label": "Loader 0.16.0"}],
+                "mohist": [{"id": "100", "label": "Build 100"}],
+                "arclight": [{
+                    "id": "arclight-forge-1.21.1-1.0.0.jar",
+                    "label": "Forge · Arclight",
+                    "url": "https://github.com/IzzelAliz/Arclight/releases/download/test/server.jar",
+                }],
+            }
+            for software, builds in expected_builds.items():
+                with self.subTest(software=software):
+                    versions = self.client.get(f"/api/software/{software}/versions")
+                    self.assertEqual(versions.get_json()["versions"], ["1.21.1"])
+                    available_builds = self.client.get(
+                        f"/api/software/{software}/versions/1.21.1/builds"
+                    )
+                    self.assertEqual(available_builds.get_json()["builds"], builds)
 
     def test_server_modules_members_backups_schedules_and_customization(self):
         created = self.post(
